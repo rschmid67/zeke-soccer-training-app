@@ -133,6 +133,133 @@ function LineChart({ data, color = "#00e676", width = 320, height = 80 }) {
   );
 }
 
+// ── Chat Page (top-level so React never unmounts it on re-render) ─────────────
+function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, sendChat, fileRef }) {
+  const bottomRef = useRef();
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <div className="card" style={{ marginBottom: 16, padding: "14px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg, var(--grass), var(--accent))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🧑‍🏫</div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Coach AI</div>
+          <div style={{ fontSize: 11, color: "var(--grass2)" }}>● Online · Knows your full profile & training history</div>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>📹 Attach Video</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="chat-container">
+          <div className="chat-messages">
+            {chatMessages.map((m, i) => (
+              <div key={i} className={`chat-msg ${m.role}`}>
+                <div className={`chat-avatar ${m.role}`}>{m.role === "coach" ? "🧑‍🏫" : "⚽"}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: "75%" }}>
+                  <div className={`chat-bubble ${m.role}`}>{m.text}</div>
+                  {m.role === "coach" && m.videos?.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {m.videos.map((v, vi) => (
+                        <a key={vi} href={v.url} target="_blank" rel="noopener noreferrer" style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          background: "rgba(255,30,30,0.12)", border: "1px solid rgba(255,80,80,0.3)",
+                          borderRadius: 8, padding: "7px 12px", textDecoration: "none",
+                          color: "var(--white)", fontSize: 12, fontWeight: 600,
+                        }}>
+                          <span style={{ color: "#ff4444", fontSize: 14 }}>▶</span>
+                          <span>Watch: {v.name}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="chat-msg">
+                <div className="chat-avatar coach">🧑‍🏫</div>
+                <div className="chat-bubble coach" style={{ color: "var(--muted)" }}>Coach is thinking...</div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          <div className="chat-input-row">
+            <input
+              className="chat-input"
+              placeholder="Ask your coach anything... or upload a video to analyze"
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && sendChat(chatInput)}
+            />
+            <button className="btn btn-primary" onClick={() => sendChat(chatInput)}>Send</button>
+          </div>
+        </div>
+
+        <div style={{ padding: "0 12px 12px", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {["How am I progressing?", "What should I work on today?", "How can I shoot like Beckham?", "Analyze my speed drill video"].map(q => (
+            <button key={q} className="btn btn-secondary btn-sm" onClick={() => sendChat(q)} style={{ fontSize: 11 }}>{q}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Video Frame Extraction ────────────────────────────────────────────────────
+function extractFrames(file, count = 4) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const frames = [];
+    let index = 0;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (video.src) URL.revokeObjectURL(video.src);
+      resolve(frames);
+    };
+
+    // Safety timeout — resolve with whatever frames we have after 20s
+    const timer = setTimeout(finish, 20000);
+
+    const seekNext = () => {
+      if (index >= count) { clearTimeout(timer); finish(); return; }
+      const dur = Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : 30;
+      // Avoid t=0 which often returns a black frame
+      video.currentTime = Math.max(0.1, ((index + 0.5) / count) * dur);
+    };
+
+    video.onloadedmetadata = () => {
+      canvas.width = Math.min(video.videoWidth || 640, 512);
+      canvas.height = video.videoHeight
+        ? Math.round(canvas.width * video.videoHeight / video.videoWidth)
+        : 288;
+      seekNext();
+    };
+
+    video.onseeked = () => {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+      if (b64) frames.push(b64);
+      index++;
+      seekNext();
+    };
+
+    video.onerror = () => { clearTimeout(timer); finish(); };
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.src = URL.createObjectURL(file);
+  });
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function SoccerApp() {
   const [page, setPage] = useState("dashboard");
@@ -194,19 +321,23 @@ All advice uses imperial units (yards, feet, lbs, mph).
 Keep responses under 200 words. Be direct, motivating, and specific. Reference their stats when relevant. Occasionally reference what Messi or Beckham did at their age.`;
 
     try {
+      // Anthropic requires messages to start with 'user', so strip any leading coach messages
+      const apiMessages = newHistory.map(m => ({
+        role: m.role === "coach" ? "assistant" : "user",
+        content: m.text,
+      }));
+      const firstUserIdx = apiMessages.findIndex(m => m.role === "user");
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system: systemPrompt,
-          messages: newHistory.map(m => ({
-            role: m.role === "coach" ? "assistant" : "user",
-            content: m.text,
-          })),
+          messages: apiMessages.slice(firstUserIdx),
         }),
       });
-      const { text } = await res.json();
-      setChatMessages([...newHistory, { role: "coach", text: text || "Let's keep grinding — you've got this!" }]);
+      const { text, videos } = await res.json();
+      setChatMessages([...newHistory, { role: "coach", text: text || "Let's keep grinding — you've got this!", videos: videos || [] }]);
     } catch {
       setChatMessages([...newHistory, { role: "coach", text: "Connection issue — but remember: Messi never let obstacles stop him either. Keep going!" }]);
     }
@@ -214,20 +345,23 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
   };
 
   // ── Video Analysis ────────────────────────────────────────────────────────
-  const analyzeVideo = async (filename) => {
+  const analyzeVideo = async (file) => {
     setVideoLoading(true);
     setVideoAnalysis(null);
 
     try {
+      const filename = file ? file.name : 'demo_xbotgo_session.mp4';
+      const frames = file ? await extractFrames(file) : [];
+
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, profile, skills }),
+        body: JSON.stringify({ filename, profile, skills, frames }),
       });
       const { text } = await res.json();
       setVideoAnalysis(text);
     } catch {
-      setVideoAnalysis("Analysis complete. Upload a video to see detailed AI feedback on your technique, speed, and positioning.");
+      setVideoAnalysis("Analysis failed. Please check your connection and try again.");
     }
     setVideoLoading(false);
   };
@@ -448,11 +582,11 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
             <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={e => {
               const f = e.target.files[0];
-              if (f) { setUploadedVideo(f.name); analyzeVideo(f.name); }
+              if (f) { setUploadedVideo(f.name); analyzeVideo(f); }
             }} />
             <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
               <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>📤 Upload Video</button>
-              <button className="btn btn-secondary" onClick={() => analyzeVideo("demo_xbotgo_session.mp4")}>🤖 Demo Analysis</button>
+              <button className="btn btn-secondary" onClick={() => analyzeVideo(null)}>🤖 Demo Analysis</button>
             </div>
           </div>
 
@@ -727,55 +861,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     );
   }
 
-  function ChatPage() {
-    const bottomRef = useRef();
-    useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
-
-    return (
-      <div style={{ maxWidth: 700 }}>
-        <div className="card" style={{ marginBottom: 16, padding: "14px 20px", display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", background: "linear-gradient(135deg, var(--grass), var(--accent))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🧑‍🏫</div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Coach AI</div>
-            <div style={{ fontSize: 11, color: "var(--grass2)" }}>● Online · Knows your full profile & training history</div>
-          </div>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>📹 Attach Video</button>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="chat-container">
-            <div className="chat-messages">
-              {chatMessages.map((m, i) => (
-                <div key={i} className={`chat-msg ${m.role}`}>
-                  <div className={`chat-avatar ${m.role}`}>{m.role === "coach" ? "🧑‍🏫" : "⚽"}</div>
-                  <div className={`chat-bubble ${m.role}`}>{m.text}</div>
-                </div>
-              ))}
-              {chatLoading && (
-                <div className="chat-msg">
-                  <div className="chat-avatar coach">🧑‍🏫</div>
-                  <div className="chat-bubble coach" style={{ color: "var(--muted)" }}>Coach is thinking...</div>
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </div>
-            <div className="chat-input-row">
-              <input className="chat-input" placeholder="Ask your coach anything... or upload a video to analyze" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendChat(chatInput)} />
-              <button className="btn btn-primary" onClick={() => sendChat(chatInput)}>Send</button>
-            </div>
-          </div>
-
-          <div style={{ padding: "0 12px 12px", display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["How am I progressing?", "What should I work on today?", "How can I shoot like Beckham?", "Analyze my speed drill video"].map(q => (
-              <button key={q} className="btn btn-secondary btn-sm" onClick={() => sendChat(q)} style={{ fontSize: 11 }}>{q}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+// ChatPage is defined outside SoccerApp (see top of file)
 
   function HighlightsPage() {
     const clips = [
@@ -947,7 +1033,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     progress: { title: "My Progress", sub: "Skill development vs CONCACAF target", comp: <ProgressPage /> },
     calendar: { title: "Calendar", sub: "View & schedule all training sessions", comp: <CalendarPage /> },
     plan: { title: "Training Plan", sub: "AI-personalized path to your goals", comp: <PlanPage /> },
-    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage /> },
+    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} sendChat={sendChat} fileRef={fileRef} /> },
     highlights: { title: "Highlights & CV", sub: "Create and share your player profile", comp: <HighlightsPage /> },
     share: { title: "Share & Export", sub: "Send reports and highlights to coaches & scouts", comp: <SharePage /> },
     settings: { title: "My Profile", sub: "Update your details, goals & preferences", comp: <SettingsPage /> },
@@ -962,8 +1048,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
         <div className="sidebar-logo">
           <span className="sidebar-logo-icon">⚽</span>
           <div>
-            <div className="sidebar-logo-text">EliteFC</div>
-            <div className="sidebar-logo-sub">Training</div>
+            <div className="sidebar-logo-text">My Path</div>
           </div>
         </div>
         <div className="sidebar-nav">

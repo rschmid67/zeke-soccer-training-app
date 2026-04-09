@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "EliteFC Training",
+  title: "My Path",
   description: "Youth soccer training tracker with AI coaching",
 };
 

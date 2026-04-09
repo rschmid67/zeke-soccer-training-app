@@ -6,6 +6,7 @@ node_modules/
 out/
 
 # Environment variables (never commit your API key)
+.env
 .env.local
 .env.*.local
 

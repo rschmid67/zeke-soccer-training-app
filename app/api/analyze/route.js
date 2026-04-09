@@ -1,39 +1,65 @@
+import Anthropic from '@anthropic-ai/sdk';
+
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
 export async function POST(request) {
-  const { filename, profile, skills } = await request.json();
+  const { filename, profile, skills, frames } = await request.json();
 
   const skillSummary = Object.entries(skills)
     .map(([k, v]) => `${k}: ${v}/100`)
     .join(", ");
 
-  const prompt = `You are an elite soccer performance analyst. A player uploaded a video file named "${filename}".
-Player profile: ${profile.name}, age ${profile.age}, position ${profile.position}.
-Current skills: ${skillSummary}
+  const hasFrames = frames && frames.length > 0;
+
+  const textPrompt = hasFrames
+    ? `You are an elite soccer performance analyst. I'm sending you ${frames.length} frames extracted from a training video of ${profile.name} (age ${profile.age}, ${profile.position}).
+
+Current skill scores: ${skillSummary}
 Goal: ${profile.goal}
 
-Provide a detailed video analysis as if you watched the footage. Generate:
-1. TECHNIQUE OBSERVATIONS (3-4 specific points about what you see)
-2. STRENGTHS IDENTIFIED (2-3 positives)
-3. AREAS TO IMPROVE (2-3 specific weaknesses with drills to fix them)
-4. SKILL SCORE ADJUSTMENTS (suggest +/- for relevant skills based on what was observed)
-5. NEXT SESSION FOCUS (1 priority drill recommendation with reps/sets in imperial units)
+Look carefully at each frame and analyze what you actually observe — body position, footwork, ball contact, posture, balance, and movement. Then provide:
 
-Be specific, technical, and reference elite player comparisons where fitting. Use imperial units.`;
+1. TECHNIQUE OBSERVATIONS (3-4 specific points based on what you see in the frames)
+2. STRENGTHS IDENTIFIED (2-3 positives visible in the footage)
+3. AREAS TO IMPROVE (2-3 specific weaknesses with drills to address them)
+4. SKILL SCORE ADJUSTMENTS (suggest +/- for relevant skills based on what you observed)
+5. NEXT SESSION FOCUS (1 priority drill with reps/sets in imperial units)
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    }),
+Be specific and technical. Reference elite player comparisons where fitting. Use imperial units.`
+    : `You are an elite soccer performance analyst and coach. Provide a detailed training analysis for:
+
+Player: ${profile.name}, Age: ${profile.age}, Position: ${profile.position}
+Current skill scores: ${skillSummary}
+Goal: ${profile.goal}
+
+Generate position-specific coaching feedback:
+1. TECHNIQUE FOCUS (3-4 key technical areas for a ${profile.position} at age ${profile.age})
+2. STRENGTHS TO BUILD ON (2-3 positives based on their skill scores)
+3. AREAS TO IMPROVE (2-3 specific weaknesses with drills to address them)
+4. SKILL SCORE ADJUSTMENTS (suggest +/- for relevant skills)
+5. NEXT SESSION FOCUS (1 priority drill with reps/sets in imperial units)
+
+Be specific, technical, and reference elite player comparisons. Use imperial units.`;
+
+  const content = [];
+
+  if (hasFrames) {
+    for (const frame of frames) {
+      content.push({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: frame },
+      });
+    }
+  }
+
+  content.push({ type: 'text', text: textPrompt });
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    messages: [{ role: 'user', content }],
   });
 
-  const data = await res.json();
-  const text = data.content?.[0]?.text ?? "Analysis complete.";
+  const text = response.content[0]?.text ?? "Analysis complete.";
   return Response.json({ text });
 }

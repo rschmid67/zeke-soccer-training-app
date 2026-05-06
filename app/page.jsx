@@ -311,6 +311,7 @@ export default function SoccerApp() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [uploadedVideo, setUploadedVideo] = useState(null);
   const fileRef = useRef();
+  const chatFileRef = useRef();
 
   // ── Data sync ────────────────────────────────────────────────────────────
   const dbPost = (action, data) => {
@@ -499,6 +500,28 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
       setVideoAnalysis("Analysis failed. Please check your connection and try again.");
     }
     setVideoLoading(false);
+  };
+
+  // ── Video-in-Chat ─────────────────────────────────────────────────────────
+  const sendVideoToChat = async (file) => {
+    if (!file) return;
+    const filename = file.name;
+    const userMsg = { role: "user", text: `📹 Attached video: ${filename}` };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatLoading(true);
+    try {
+      const frames = await extractFrames(file);
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, profile, skills, frames }),
+      });
+      const { text } = await res.json();
+      setChatMessages(prev => [...prev, { role: "coach", text: text || "Analysis complete. Keep working on those details!", videos: [] }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: "coach", text: "Couldn't analyze that video — try a smaller clip or check your connection." }]);
+    }
+    setChatLoading(false);
   };
 
   // ── Pages ─────────────────────────────────────────────────────────────────
@@ -1291,7 +1314,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     progress: { title: "My Progress", sub: "Skill development vs CONCACAF target", comp: <ProgressPage /> },
     calendar: { title: "Calendar", sub: "View & schedule all training sessions", comp: <CalendarPage /> },
     plan: { title: "Training Plan", sub: "AI-personalized path to your goals", comp: <PlanPage /> },
-    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} sendChat={sendChat} fileRef={fileRef} /> },
+    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} sendChat={sendChat} fileRef={chatFileRef} /> },
     highlights: { title: "Highlights & CV", sub: "Create and share your player profile", comp: <HighlightsPage /> },
     share: { title: "Share & Export", sub: "Send reports and highlights to coaches & scouts", comp: <SharePage /> },
     settings: { title: "My Profile", sub: "Update your details, goals & preferences", comp: <SettingsPage /> },
@@ -1375,6 +1398,15 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           </div>
         </div>
       )}
+
+      {/* Chat video input — always mounted so chatFileRef is never null */}
+      <input
+        ref={chatFileRef}
+        type="file"
+        accept="video/*"
+        style={{ display: "none" }}
+        onChange={e => { const f = e.target.files[0]; e.target.value = ""; if (f) sendVideoToChat(f); }}
+      />
 
       {/* Notification */}
       {notification && <div className="notif">{notification}</div>}

@@ -53,10 +53,15 @@ export default async (request) => {
     const firstUserIdx = messages.findIndex((m) => m.role === "user");
     const trimmed = messages.slice(firstUserIdx);
 
-    // Get coach response
+    // Detect if any message contains image content blocks
+    const hasImages = trimmed.some(
+      (m) => Array.isArray(m.content) && m.content.some((b) => b.type === "image")
+    );
+
+    // Get coach response — use more tokens for video analysis
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 1024,
+      max_tokens: hasImages ? 2048 : 1024,
       system,
       messages: trimmed,
     });

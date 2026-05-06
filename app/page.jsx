@@ -203,7 +203,7 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, sendChat
 }
 
 // ── Video Frame Extraction ────────────────────────────────────────────────────
-function extractFrames(file, count = 4) {
+function extractFrames(file, count = 8) {
   return new Promise((resolve) => {
     const video = document.createElement('video');
     const canvas = document.createElement('canvas');
@@ -506,20 +506,68 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
   const sendVideoToChat = async (file) => {
     if (!file) return;
     const filename = file.name;
-    const userMsg = { role: "user", text: `📹 Attached video: ${filename}` };
-    setChatMessages(prev => [...prev, userMsg]);
+
+    setChatMessages(prev => [...prev, { role: "user", text: `📹 Analyzing video: ${filename}` }]);
     setChatLoading(true);
+
     try {
-      const frames = await extractFrames(file);
-      const res = await fetch("/api/analyze", {
+      // Extract 8 frames spread across the full video length
+      const frames = await extractFrames(file, 8);
+
+      if (frames.length === 0) {
+        setChatMessages(prev => [...prev, {
+          role: "coach",
+          text: "I couldn't read frames from that video. Try saving it as MP4 or MOV and upload again.",
+          videos: [],
+        }]);
+        setChatLoading(false);
+        return;
+      }
+
+      const skillSummary = Object.entries(skills).map(([k, v]) => `${k}: ${v}/100`).join(", ");
+
+      // Build message content: image frames first, then the coaching prompt
+      const imageBlocks = frames.map(frame => ({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: frame },
+      }));
+
+      const analysisPrompt = `I'm sending you ${frames.length} frames extracted from ${profile.name}'s soccer training video (${filename}).
+
+Player: ${profile.name} | Age: ${profile.age} | Position: ${profile.position}
+Goal: ${profile.goal}
+Current skill scores: ${skillSummary}
+
+Study each frame carefully and give specific coaching feedback on what you actually observe:
+
+1. FOOTWORK & TECHNIQUE — Body shape, ball contact quality, first touch, plant foot position
+2. POSITIONING & MOVEMENT — Space awareness, timing of runs, shape as an attacking mid
+3. DECISION MAKING — Any visible choices on and off the ball
+4. STRENGTHS — 2-3 genuine positives visible in the footage
+5. PRIORITY DRILL — The single most important thing to fix, with a specific drill (reps/sets, imperial units)
+
+Reference what elite attacking mids do at age ${profile.age}. Be direct and technical.`;
+
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, profile, skills, frames }),
+        body: JSON.stringify({
+          system: `You are Coach AI — an expert soccer coach for ${profile.name}, age ${profile.age}, ${profile.position}. Their goal: ${profile.goal}. You are analyzing real video frames they uploaded. Describe only what you can actually see.`,
+          messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: analysisPrompt }] }],
+        }),
       });
-      const { text } = await res.json();
-      setChatMessages(prev => [...prev, { role: "coach", text: text || "Analysis complete. Keep working on those details!", videos: [] }]);
+
+      const { text, videos } = await res.json();
+      setChatMessages(prev => [...prev, {
+        role: "coach",
+        text: text || "I reviewed your footage. Keep grinding — every session counts!",
+        videos: videos || [],
+      }]);
     } catch {
-      setChatMessages(prev => [...prev, { role: "coach", text: "Couldn't analyze that video — try a smaller clip or check your connection." }]);
+      setChatMessages(prev => [...prev, {
+        role: "coach",
+        text: "Couldn't analyze that video — try a smaller clip or check your connection.",
+      }]);
     }
     setChatLoading(false);
   };

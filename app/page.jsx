@@ -26,43 +26,38 @@ const NAV = [
   { id: "settings", label: "My Profile", icon: "👤", section: "ACCOUNT" },
 ];
 
-const SAMPLE_SESSIONS = [
-  { id: 1, date: "2025-02-10", type: "Dribbling", duration: 45, source: "App", notes: "Cone drills 5 sets", score: 78 },
-  { id: 2, date: "2025-02-12", type: "Shooting", duration: 30, source: "Manual", notes: "Free kicks practice", score: 71 },
-  { id: 3, date: "2025-02-14", type: "Speed", duration: 60, source: "App", notes: "Sprint intervals x10", score: 82 },
-  { id: 4, date: "2025-02-17", type: "Agility", duration: 40, source: "XbotGo", notes: "Ladder drills uploaded", score: 75 },
-  { id: 5, date: "2025-02-20", type: "Passing", duration: 35, source: "Manual", notes: "Wall passes", score: 68 },
-  { id: 6, date: "2025-02-22", type: "Full Session", duration: 90, source: "App", notes: "Match simulation", score: 80 },
-  { id: 7, date: "2025-02-26", type: "Shooting", duration: 45, source: "XbotGo", notes: "Penalty & long-range", score: 77 },
-  { id: 8, date: "2025-03-01", type: "Dribbling", duration: 50, source: "App", notes: "1v1 scenarios", score: 83 },
-];
+const SAMPLE_SESSIONS = [];
 
 const WEEKLY_PLAN = [
-  { day: "Mon", focus: "Dribbling & Ball Control", drills: ["Figure-8 cones", "Inside/outside touch", "Messi turn drill"], duration: 45, intensity: "Medium" },
-  { day: "Tue", focus: "Speed & Agility", drills: ["Sprint ladders", "Shuttle runs (20 yds)", "Explosive starts"], duration: 40, intensity: "High" },
-  { day: "Wed", focus: "Shooting Technique", drills: ["Driven shots (18 yd box)", "Curled free kicks (Beckham drill)", "1-touch finishing"], duration: 50, intensity: "Medium" },
-  { day: "Thu", focus: "Rest / Light Recovery", drills: ["Yoga & stretching", "Light juggling"], duration: 20, intensity: "Low" },
-  { day: "Fri", focus: "Passing & Vision", drills: ["Rondo 4v2", "Long-range switch passes", "Through-ball timing"], duration: 45, intensity: "Medium" },
-  { day: "Sat", focus: "Full Match Intensity", drills: ["Scrimmage or match", "Position-specific drills"], duration: 90, intensity: "High" },
-  { day: "Sun", focus: "Rest Day", drills: ["Light stretching only"], duration: 15, intensity: "Low" },
+  { day: "Mon", focus: "Dribbling & Ball Mastery", drills: ["Cone weave (10 cones, 1 yd apart)", "Inside/outside touches – 2 min each foot", "Cruyff turn + V-pullback combo"], duration: 45, intensity: "Medium" },
+  { day: "Tue", focus: "Passing & Creative Play", drills: ["Wall passes – 50 reps each foot", "1-2 combo drill with cone target", "Long switch passes across 20 yds"], duration: 45, intensity: "Medium" },
+  { day: "Wed", focus: "Rest / Active Recovery", drills: ["Light juggling (100 touches)", "Hip flexor & hamstring stretch"], duration: 20, intensity: "Low" },
+  { day: "Thu", focus: "Shooting & Finishing", drills: ["Driven shots from 18 yds – 15 reps", "1-touch finish off low cross", "Penalty practice – 10 shots"], duration: 50, intensity: "Medium" },
+  { day: "Fri", focus: "Speed & Agility Games", drills: ["Ladder footwork (4 patterns × 5 reps)", "20-yd sprint with ball – 8 sets", "Reaction start bursts from standing"], duration: 40, intensity: "High" },
+  { day: "Sat", focus: "Match / Scrimmage", drills: ["Full scrimmage or match play", "Focus: finding space as the #10"], duration: 60, intensity: "High" },
+  { day: "Sun", focus: "Rest Day", drills: ["Full rest – no training"], duration: 0, intensity: "Low" },
 ];
 
 const CHAT_INIT = [
-  { role: "coach", text: "Hola! I'm Coach AI — your personal soccer mentor inspired by the greats like Messi and Beckham. I've analyzed your recent sessions and I'm here to guide you every step toward that CONCACAF U15 goal. What's on your mind today?" },
+  { role: "coach", text: "Hey Zeke! I'm your Coach AI — here to guide you every step toward making the CONCACAF U15 Cup team in 2029. You're 11 right now and you've got 3 years to build the game of your life. Every session counts. What do you want to work on today?" },
 ];
 
 const DEFAULT_PROFILE = {
-  name: "Alex Rivera", age: 11, position: "Midfielder",
-  height: "4'8\"", weight: "88 lbs",
-  goal: "Play in CONCACAF U15 Cup in 3 years",
-  targetYear: 2028, idols: ["Messi", "Beckham"],
-  club: "FC Stars U12", coachEmail: "coach@fcstars.com",
+  name: "Zeke Schmid", age: "11", position: "Attacking Mid",
+  height: "", weight: "",
+  goal: "Make the U15 CONCACAF Cup team in 2029",
+  targetYear: 2029,
+  idols: [],
+  club: "", coachEmail: "",
 };
 
 const DEFAULT_SKILLS = {
-  dribbling: 68, shooting: 62, passing: 71, speed: 74,
-  agility: 70, defending: 55, heading: 48, positioning: 65,
+  dribbling: 0, shooting: 0, passing: 0, speed: 0,
+  agility: 0, defending: 0, heading: 0, positioning: 0,
 };
+
+// Bump this string any time you need to force a full localStorage + DB reset for all users.
+const DATA_VERSION = "v3";
 
 // ── Radar Chart Component ─────────────────────────────────────────────────────
 function RadarChart({ data, size = 220 }) {
@@ -260,34 +255,169 @@ function extractFrames(file, count = 4) {
   });
 }
 
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin, loading }) {
+  const [code, setCode] = useState("");
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--pitch1)" }}>
+      <div style={{ background: "var(--pitch2)", border: "1px solid var(--border)", borderRadius: 16, padding: 40, maxWidth: 400, width: "90%", textAlign: "center" }}>
+        <div style={{ fontSize: 56, marginBottom: 12 }}>⚽</div>
+        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 36, color: "var(--grass2)", letterSpacing: 3, marginBottom: 8 }}>My Path</div>
+        <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 14, color: "var(--muted)", marginBottom: 28, lineHeight: 1.7 }}>
+          Enter your access code to load your training data on this device.<br />
+          New here? Just enter any code to create your account.
+        </div>
+        <input
+          className="form-input"
+          placeholder="Access code (e.g. zeke2025)"
+          value={code}
+          onChange={e => setCode(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && code.trim() && onLogin(code.trim().toLowerCase())}
+          style={{ marginBottom: 14, fontSize: 15, textAlign: "center", letterSpacing: 2 }}
+          autoFocus
+        />
+        <button
+          className="btn btn-primary"
+          style={{ width: "100%", fontSize: 15, padding: "12px 0" }}
+          onClick={() => code.trim() && onLogin(code.trim().toLowerCase())}
+          disabled={!code.trim() || loading}
+        >
+          {loading ? "Loading your data..." : "Enter App →"}
+        </button>
+        <div style={{ marginTop: 20, fontSize: 11, color: "var(--muted)", lineHeight: 1.8 }}>
+          Use the same code on every device to sync your data.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function SoccerApp() {
   const [page, setPage] = useState("dashboard");
+  const [userId, setUserId] = useState(null);
+  const [dbLoading, setDbLoading] = useState(false);
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [skills, setSkills] = useState(DEFAULT_SKILLS);
-  const [sessions, setSessions] = useState(SAMPLE_SESSIONS);
+  const [sessions, setSessions] = useState([]);
   const [chatMessages, setChatMessages] = useState(CHAT_INIT);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [modal, setModal] = useState(null); // "addSession" | "editProfile" | "shareModal"
   const [activeTab, setActiveTab] = useState(0);
-  const [calMonth, setCalMonth] = useState(new Date(2025, 2, 1));
+  const [calMonth, setCalMonth] = useState(new Date());
   const [videoAnalysis, setVideoAnalysis] = useState(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [uploadedVideo, setUploadedVideo] = useState(null);
   const fileRef = useRef();
 
-  // ── localStorage persistence ────────────────────────────────────────────
-  useEffect(() => {
+  // ── Data sync ────────────────────────────────────────────────────────────
+  const dbPost = (action, data) => {
+    fetch("/api/db", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, userId, data }),
+    }).catch(() => {});
+  };
+
+  const loadFromDb = async (uid) => {
+    setDbLoading(true);
     try {
-      const p = localStorage.getItem("zeke_profile");
-      if (p) setProfile(JSON.parse(p));
-      const sk = localStorage.getItem("zeke_skills");
-      if (sk) setSkills(JSON.parse(sk));
-      const se = localStorage.getItem("zeke_sessions");
-      if (se) setSessions(JSON.parse(se));
-    } catch {}
+      await fetch(`/api/db?userId=${encodeURIComponent(uid)}&action=init`);
+      const res = await fetch(`/api/db?userId=${encodeURIComponent(uid)}`);
+      const d = await res.json();
+      if (d.profile) {
+        const p = {
+          name: d.profile.name || DEFAULT_PROFILE.name,
+          age: d.profile.age || DEFAULT_PROFILE.age,
+          position: d.profile.position || DEFAULT_PROFILE.position,
+          height: d.profile.height || "",
+          weight: d.profile.weight || "",
+          goal: d.profile.goal || DEFAULT_PROFILE.goal,
+          targetYear: d.profile.target_year || DEFAULT_PROFILE.targetYear,
+          idols: d.profile.idols || [],
+          club: d.profile.club || "",
+          coachEmail: d.profile.coach_email || "",
+        };
+        setProfile(p);
+        localStorage.setItem("zeke_profile", JSON.stringify(p));
+      }
+      if (d.skills) {
+        const sk = {
+          dribbling: d.skills.dribbling ?? 0,
+          shooting: d.skills.shooting ?? 0,
+          passing: d.skills.passing ?? 0,
+          speed: d.skills.speed ?? 0,
+          agility: d.skills.agility ?? 0,
+          defending: d.skills.defending ?? 0,
+          heading: d.skills.heading ?? 0,
+          positioning: d.skills.positioning ?? 0,
+        };
+        setSkills(sk);
+        localStorage.setItem("zeke_skills", JSON.stringify(sk));
+      }
+      if (d.sessions && d.sessions.length > 0) {
+        const se = d.sessions.map(s => ({
+          id: s.id,
+          date: typeof s.date === "string" ? s.date.slice(0, 10) : new Date(s.date).toISOString().slice(0, 10),
+          type: s.type,
+          duration: s.duration,
+          source: s.source,
+          notes: s.notes || "",
+          score: s.score,
+        }));
+        setSessions(se);
+        localStorage.setItem("zeke_sessions", JSON.stringify(se));
+      }
+    } catch {
+      // DB unavailable — fall back to localStorage cache
+      try {
+        const p = localStorage.getItem("zeke_profile");
+        if (p) {
+          const parsed = JSON.parse(p);
+          setProfile({
+            ...parsed,
+            name: parsed.name || DEFAULT_PROFILE.name,
+            age: parsed.age || DEFAULT_PROFILE.age,
+            position: parsed.position || DEFAULT_PROFILE.position,
+            goal: parsed.goal || DEFAULT_PROFILE.goal,
+            targetYear: parsed.targetYear || DEFAULT_PROFILE.targetYear,
+          });
+        }
+        const sk = localStorage.getItem("zeke_skills");
+        if (sk) setSkills(JSON.parse(sk));
+        const se = localStorage.getItem("zeke_sessions");
+        if (se) setSessions(JSON.parse(se));
+      } catch {}
+    }
+    setUserId(uid);
+    localStorage.setItem("zeke_user_id", uid);
+    setDbLoading(false);
+  };
+
+  useEffect(() => {
+    const storedVersion = localStorage.getItem("zeke_data_version");
+    const storedId = localStorage.getItem("zeke_user_id");
+
+    if (storedVersion !== DATA_VERSION) {
+      // Wipe every cached key so stale data can't bleed through
+      ["zeke_profile", "zeke_skills", "zeke_sessions"].forEach(k => localStorage.removeItem(k));
+      localStorage.setItem("zeke_data_version", DATA_VERSION);
+
+      if (storedId) {
+        // Reset DB to clean defaults, then reload fresh
+        fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "resetAll", userId: storedId, data: DEFAULT_PROFILE }),
+        }).catch(() => {}).finally(() => loadFromDb(storedId));
+      }
+      return;
+    }
+
+    if (storedId) loadFromDb(storedId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { localStorage.setItem("zeke_profile", JSON.stringify(profile)); }, [profile]);
@@ -297,6 +427,11 @@ export default function SoccerApp() {
   const notify = (msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
+  };
+
+  const deleteSession = (sessionId) => {
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    dbPost("deleteSession", { id: sessionId });
   };
 
   // ── API Chat ──────────────────────────────────────────────────────────────
@@ -368,19 +503,27 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
 
   // ── Pages ─────────────────────────────────────────────────────────────────
   const totalHours = sessions.reduce((s, x) => s + x.duration, 0) / 60;
-  const avgScore = Math.round(sessions.reduce((s, x) => s + x.score, 0) / sessions.length);
-  const daysToGoal = Math.max(0, Math.floor((new Date(`${profile.targetYear}-06-01`) - new Date()) / 86400000));
-
-  const radarData = SKILLS.map(s => [s.label, skills[s.id] || 50, Math.min(100, (skills[s.id] || 50) + 20)]);
-
-  const progressHistory = {
-    dribbling: [55, 58, 60, 63, 65, 68],
-    shooting: [50, 52, 55, 58, 60, 62],
-    speed: [65, 67, 70, 71, 73, 74],
-    passing: [60, 63, 65, 68, 70, 71],
-  };
+  const avgScore = sessions.length ? Math.round(sessions.reduce((s, x) => s + x.score, 0) / sessions.length) : 0;
+  const daysToGoal = profile.targetYear ? Math.max(0, Math.floor((new Date(`${profile.targetYear}-06-01`) - new Date()) / 86400000)) : 0;
 
   const targetBySkill = { dribbling: 88, shooting: 85, passing: 87, speed: 90, agility: 88, defending: 80, heading: 78, positioning: 86 };
+
+  const radarData = SKILLS.map(s => [s.label, skills[s.id] || 0, targetBySkill[s.id] || 85]);
+
+  const progressHistory = {
+    dribbling: [skills.dribbling],
+    shooting: [skills.shooting],
+    speed: [skills.speed],
+    passing: [skills.passing],
+  };
+
+  const streak = (() => {
+    if (!sessions.length) return 0;
+    const dates = new Set(sessions.map(s => s.date));
+    let d = new Date(), count = 0;
+    while (dates.has(d.toISOString().slice(0, 10))) { count++; d.setDate(d.getDate() - 1); }
+    return count;
+  })();
 
   function DashboardPage() {
     const today = WEEKLY_PLAN[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
@@ -414,7 +557,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             { label: "Total Hours", value: totalHours.toFixed(1), unit: "hrs", icon: "⏱️" },
             { label: "Sessions", value: sessions.length, unit: "total", icon: "📋" },
             { label: "Avg Score", value: avgScore, unit: "/100", icon: "🎯" },
-            { label: "Current Streak", value: 5, unit: "days", icon: "🔥" },
+            { label: "Current Streak", value: streak, unit: "days", icon: "🔥" },
           ].map(s => (
             <div className="card" key={s.label} style={{ textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 6 }}>{s.icon}</div>
@@ -462,7 +605,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           <div className="card-title">Skill Progress vs CONCACAF Target</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 32px" }}>
             {SKILLS.map(s => {
-              const cur = skills[s.id] || 50;
+              const cur = skills[s.id] || 0;
               const tgt = targetBySkill[s.id] || 85;
               const pct = Math.round((cur / tgt) * 100);
               return (
@@ -487,9 +630,20 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     const [tab, setTab] = useState(0);
     const [newSession, setNewSession] = useState({ date: new Date().toISOString().slice(0,10), type: "Dribbling", duration: 45, source: "Manual", notes: "", score: 70 });
 
-    const addSession = () => {
-      setSessions(prev => [...prev, { id: Date.now(), ...newSession, score: parseInt(newSession.score), duration: parseInt(newSession.duration) }]);
+    const addSession = async () => {
+      const sessionData = { ...newSession, score: parseInt(newSession.score), duration: parseInt(newSession.duration) };
       notify("Training session logged! ✅");
+      try {
+        const res = await fetch("/api/db", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "addSession", userId, data: sessionData }),
+        });
+        const result = await res.json();
+        setSessions(prev => [...prev, { id: result.session?.id || Date.now(), ...sessionData }]);
+      } catch {
+        setSessions(prev => [...prev, { id: Date.now(), ...sessionData }]);
+      }
     };
 
     return (
@@ -504,7 +658,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           <div className="card">
             <div className="card-title">All Training Sessions ({sessions.length})</div>
             <table className="data-table">
-              <thead><tr><th>Date</th><th>Type</th><th>Duration</th><th>Source</th><th>Score</th><th>Notes</th></tr></thead>
+              <thead><tr><th>Date</th><th>Type</th><th>Duration</th><th>Source</th><th>Score</th><th>Notes</th><th></th></tr></thead>
               <tbody>
                 {[...sessions].reverse().map(s => (
                   <tr key={s.id}>
@@ -514,6 +668,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
                     <td><span className={`badge ${s.source === "XbotGo" ? "badge-blue" : "badge-gold"}`}>{s.source}</span></td>
                     <td style={{ fontFamily: "'Bebas Neue'", fontSize: 18, color: s.score >= 75 ? "var(--grass2)" : "var(--gold)" }}>{s.score}</td>
                     <td style={{ color: "var(--muted)", fontSize: 12 }}>{s.notes}</td>
+                    <td><button style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "2px 6px" }} onClick={() => deleteSession(s.id)}>✕</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -711,10 +866,10 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           <div className="card-title">Road to CONCACAF U15 — Milestones</div>
           <div className="timeline">
             {[
-              { t: "Foundation (Now–6mo)", s: "Build dribbling to 78, shooting to 72, speed to 80. Core fitness base. 4x/week training.", done: false },
-              { t: "Development (6–18mo)", s: "Reach 85+ in top 3 skills. Join competitive club. Enter regional tournaments.", done: false },
-              { t: "Pre-Elite (18–30mo)", s: "All core skills at 80+. Scout exposure. Tryouts for U13/U14 competitive programs.", done: false },
-              { t: "CONCACAF Ready (30–36mo)", s: "All skills at target levels. Tournament experience. Ready for U15 selection trials.", done: false },
+              { t: "Phase 1 — Foundation (May–Oct 2026, Age 11)", s: "4x/week, 45 min. Master ball control, first touch, cone dribbling, wall passing. Targets: Dribbling 65 · Passing 65 · Positioning 65 · Speed 70.", done: false },
+              { t: "Phase 2 — Technical Development (Nov 2026–Apr 2027, Age 12)", s: "4–5x/week. Shooting technique, 1v1 attacking, creative combinations. Targets: Dribbling 73 · Shooting 70 · Passing 73 · Positioning 73.", done: false },
+              { t: "Phase 3 — Competitive Growth (May 2027–Oct 2028, Age 12–13)", s: "5x/week + match day. Join competitive club, enter regional tournaments, work all 8 skills to 78+. Scout exposure begins.", done: false },
+              { t: "Phase 4 — Elite Prep (Nov 2028–Jun 2029, Age 13–14)", s: "5–6x/week + tournaments. All skills at CONCACAF target. High-pressure match reps. U15 selection trials.", done: false },
             ].map((item, i) => (
               <div className="timeline-item" key={i}>
                 <div className="timeline-dot future" />
@@ -810,46 +965,102 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
   }
 
   function PlanPage() {
+    const ROADMAP = [
+      {
+        phase: "Phase 1", name: "Foundation", period: "May–Oct 2026", age: "Age 11",
+        color: "var(--grass)",
+        summary: "Build the technical base every elite #10 needs. Ball mastery, first touch, basic dribbling patterns, and positional awareness.",
+        frequency: "4x/week · 45–50 min sessions",
+        skillTargets: "Dribbling 65 · Passing 65 · Positioning 65 · Speed 70",
+        drills: [
+          { icon: "⚡", title: "Cone Weave – Tight Control", detail: "10 cones, 1 yd apart · 5 sets each foot · Focus on soft touches", skill: "Dribbling", intensity: "Medium" },
+          { icon: "🔄", title: "Wall Pass – Both Feet", detail: "50 reps per foot against wall · Plant foot pointed at target", skill: "Passing", intensity: "Medium" },
+          { icon: "📍", title: "Shadow Positioning Runs", detail: "Move without ball into pockets of space · 10 min w/ coach/parent calling directions", skill: "Positioning", intensity: "Low" },
+          { icon: "💨", title: "Dribble & Sprint (20 yds)", detail: "Dribble 10 yds, explode last 10 yds · 8 sets · 45 sec rest", skill: "Speed", intensity: "High" },
+        ],
+      },
+      {
+        phase: "Phase 2", name: "Technical Development", period: "Nov 2026–Apr 2027", age: "Age 12",
+        color: "var(--gold)",
+        summary: "Add shooting power and accuracy, expand passing range, develop 1v1 attacking ability. Establish yourself as a creative threat in the #10 role.",
+        frequency: "4–5x/week · 50 min sessions",
+        skillTargets: "Dribbling 73 · Shooting 70 · Passing 73 · Positioning 73",
+        drills: [
+          { icon: "🎯", title: "Driven Shot – 18 Yard Box", detail: "15 shots per session · Lock ankle, hit through center · Track success rate", skill: "Shooting", intensity: "Medium" },
+          { icon: "⚡", title: "Cruyff Turn + Explosive Dribble", detail: "Set up 5 defenders (cones) · Beat each with turn, burst past", skill: "Dribbling", intensity: "High" },
+          { icon: "🔄", title: "Through-Ball Timing Drill", detail: "Pass between two moving targets 25 yds apart · Weight and timing", skill: "Passing", intensity: "Medium" },
+          { icon: "📍", title: "Half-Space Attack Runs", detail: "Attack from deep left/right half-spaces · Receive, turn, shoot – 10 reps each side", skill: "Positioning", intensity: "High" },
+        ],
+      },
+      {
+        phase: "Phase 3", name: "Competitive Growth", period: "May 2027–Oct 2028", age: "Age 12–13",
+        color: "var(--accent)",
+        summary: "Enter competitive club soccer and regional tournaments. Work all 8 skill areas to 78+. Build match fitness, decision-making under pressure, and scout readiness.",
+        frequency: "5x/week · 55–60 min · + match day",
+        skillTargets: "All 8 skills at 78+ · Competitive match experience",
+        drills: [
+          { icon: "🛡️", title: "Press & Win It Back", detail: "Pressing from the front as #10 · 2v2 pressing box (20×20 yds) · 5 min rounds", skill: "Defending", intensity: "High" },
+          { icon: "🧠", title: "Heading Technique", detail: "15 headed clearances + 10 attacking headers per session · Eyes open, attack the ball", skill: "Heading", intensity: "Medium" },
+          { icon: "💨", title: "Agility Ladder Complex", detail: "6 ladder patterns · 3 sets each · Rest 60 sec between patterns", skill: "Agility", intensity: "High" },
+          { icon: "⚽", title: "11v11 Positional Scrimmage", detail: "Full-sided game with positional instructions for #10 · Focus on finding pockets", skill: "Positioning", intensity: "High" },
+        ],
+      },
+      {
+        phase: "Phase 4", name: "Elite Prep", period: "Nov 2028–Jun 2029", age: "Age 13–14",
+        color: "#e040fb",
+        summary: "All skills must reach CONCACAF U15 target levels. High-pressure tournament play, leadership in the team, and preparation for U15 selection trials.",
+        frequency: "5–6x/week · 60+ min · + tournament weekends",
+        skillTargets: "CONCACAF targets: Dribbling 88 · Shooting 85 · Passing 87 · Speed 90 · Agility 88 · Defending 80 · Heading 78 · Positioning 86",
+        drills: [
+          { icon: "🎯", title: "Free Kick Curler – Both Feet", detail: "20 shots from 22 yds with curve · Left and right foot · Must clear wall", skill: "Shooting", intensity: "Medium" },
+          { icon: "⚡", title: "1v1 Pressure Dribble Circuit", detail: "Beat live defender in tight space · 6 cones, defender starts 2 yds away · 10 reps", skill: "Dribbling", intensity: "High" },
+          { icon: "💨", title: "High-Speed Agility Combine", detail: "Pro-agility (5-10-5) + 40-yd dash · Track & improve personal bests each week", skill: "Speed", intensity: "High" },
+          { icon: "📍", title: "Elite Positioning – Rondo 5v2", detail: "5v2 in 15×15 yd box · Max 2 touches · Win ball back within 5 passes", skill: "Passing", intensity: "High" },
+        ],
+      },
+    ];
+
+    const [activePhase, setActivePhase] = useState(0);
+    const phase = ROADMAP[activePhase];
+
     return (
       <div>
-        <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card" style={{ marginBottom: 18 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
             <div>
-              <div className="card-title">Personalized Training Plan</div>
-              <div style={{ fontSize: 14, color: "var(--white)", fontWeight: 700 }}>12-Week Block — Foundation Phase</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Adapted to {profile.name} · Age {profile.age} · Targeting CONCACAF U15 in {Math.ceil(daysToGoal / 365 * 10) / 10} years</div>
+              <div className="card-title">3-Year Development Roadmap</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Zeke Schmid · Age 11 · Attacking Mid · Goal: CONCACAF U15 Cup 2029</div>
             </div>
             <button className="btn btn-gold btn-sm" onClick={() => { setPage("share"); notify("Opening share options..."); }}>📤 Share with Coach</button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
-            {[
-              { phase: "Phase 1", name: "Foundation", weeks: "Weeks 1–4", focus: "Ball control, first touch, basic dribbling", color: "var(--grass)" },
-              { phase: "Phase 2", name: "Development", weeks: "Weeks 5–8", focus: "Shooting, passing combinations, speed", color: "var(--gold)" },
-              { phase: "Phase 3", name: "Match Prep", weeks: "Weeks 9–12", focus: "Positional play, game situations, 1v1", color: "var(--accent)" },
-            ].map(p => (
-              <div key={p.phase} style={{ background: "var(--pitch3)", border: "1px solid var(--border)", borderRadius: 10, padding: 16, borderTop: `3px solid ${p.color}` }}>
-                <div style={{ fontSize: 10, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>{p.phase}</div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", margin: "4px 0" }}>{p.weeks}</div>
-                <div style={{ fontSize: 12, color: p.color }}>{p.focus}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
+            {ROADMAP.map((p, i) => (
+              <div key={p.phase} onClick={() => setActivePhase(i)} style={{ background: activePhase === i ? "var(--pitch2)" : "var(--pitch3)", border: `1px solid ${activePhase === i ? p.color : "var(--border)"}`, borderRadius: 10, padding: 14, borderTop: `3px solid ${p.color}`, cursor: "pointer" }}>
+                <div style={{ fontSize: 10, letterSpacing: 2, color: "var(--muted)", marginBottom: 3 }}>{p.phase}</div>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", margin: "3px 0" }}>{p.period}</div>
+                <div style={{ fontSize: 10, color: p.color }}>{p.age}</div>
               </div>
             ))}
           </div>
+        </div>
 
-          <div className="card-title" style={{ marginTop: 8 }}>This Week's Drills — Messi & Beckham Inspired</div>
-          {[
-            { icon: "⚡", title: "Messi Cone Dribble Circuit", detail: "7 cones set 2 yds apart · 5 sets · Rest 90 sec", skill: "Dribbling", intensity: "High" },
-            { icon: "🎯", title: "Beckham Free Kick Technique", detail: "15 shots from 22 yds, both feet · Focus on curve", skill: "Shooting", intensity: "Medium" },
-            { icon: "💨", title: "20-Yard Sprint Intervals", detail: "10x 20-yd sprints with 30 sec rest · Track best time", skill: "Speed", intensity: "High" },
-            { icon: "🔄", title: "Rondo 4v2 Possession", detail: "10-min session · First touch only · Limit: 2 touches", skill: "Passing", intensity: "Medium" },
-          ].map((d, i) => (
+        <div className="card" style={{ marginBottom: 18, borderTop: `3px solid ${phase.color}` }}>
+          <div className="card-title" style={{ color: phase.color }}>{phase.phase}: {phase.name} — {phase.period}</div>
+          <div style={{ fontSize: 13, color: "var(--white)", marginBottom: 12, lineHeight: 1.6 }}>{phase.summary}</div>
+          <div style={{ display: "flex", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
+            <span className="badge badge-green">{phase.frequency}</span>
+            <span className="badge badge-gold" style={{ fontSize: 10 }}>Targets: {phase.skillTargets}</span>
+          </div>
+          <div className="card-title" style={{ marginTop: 4, fontSize: 12 }}>Key Drills This Phase</div>
+          {phase.drills.map((d, i) => (
             <div className="plan-item" key={i}>
               <div className="plan-item-icon" style={{ background: "rgba(0,200,83,.1)", fontSize: 22 }}>{d.icon}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <div className="plan-item-title">{d.title}</div>
-                  <span className={`badge ${d.intensity === "High" ? "badge-red" : "badge-green"}`}>{d.intensity}</span>
+                  <span className={`badge ${d.intensity === "High" ? "badge-red" : d.intensity === "Low" ? "badge-blue" : "badge-green"}`}>{d.intensity}</span>
                 </div>
                 <div className="plan-item-meta">{d.detail}</div>
                 <span className="badge badge-blue" style={{ marginTop: 6, fontSize: 9 }}>{d.skill}</span>
@@ -864,27 +1075,30 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
 // ChatPage is defined outside SoccerApp (see top of file)
 
   function HighlightsPage() {
-    const clips = [
-      { name: "Dribbling Showcase", date: "Feb 2025", duration: "0:45", icon: "⚡" },
-      { name: "Best Goals Reel", date: "Jan 2025", duration: "1:20", icon: "🎯" },
-      { name: "Speed & Agility", date: "Feb 2025", duration: "0:55", icon: "💨" },
-    ];
+    const clips = [];
     return (
       <div>
         <div className="grid-2" style={{ marginBottom: 24 }}>
           <div className="card">
             <div className="card-title">Highlight Videos</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              {clips.map(c => (
-                <div className="hl-card" key={c.name}>
-                  <div className="hl-thumb">{c.icon}</div>
-                  <div className="hl-info">
-                    <div className="hl-name">{c.name}</div>
-                    <div className="hl-meta">{c.date} · {c.duration}</div>
+            {clips.length === 0 ? (
+              <div style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "28px 0 20px" }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>🎬</div>
+                No highlights yet. Upload your first training video to start building your reel!
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+                {clips.map(c => (
+                  <div className="hl-card" key={c.name}>
+                    <div className="hl-thumb">{c.icon}</div>
+                    <div className="hl-info">
+                      <div className="hl-name">{c.name}</div>
+                      <div className="hl-meta">{c.date} · {c.duration}</div>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn btn-primary btn-sm" onClick={() => notify("🎬 Creating highlight reel...")}>✨ Create Highlight Reel</button>
               <button className="btn btn-secondary btn-sm" onClick={() => notify("📤 Share link copied!")}>📤 Share</button>
@@ -955,6 +1169,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
 
   function SettingsPage() {
     const [form, setForm] = useState({ ...profile });
+    const [skillForm, setSkillForm] = useState({ ...skills });
     const fields = [
       { key: "name", label: "Full Name" },
       { key: "age", label: "Age" },
@@ -968,13 +1183,13 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     ];
     return (
       <div style={{ maxWidth: 520 }}>
-        <div className="card">
+        <div className="card" style={{ marginBottom: 20 }}>
           <div className="card-title">My Profile</div>
           <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 24 }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, var(--grass), var(--accent))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>⚽</div>
             <div>
-              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: "var(--white)", letterSpacing: 2 }}>{profile.name}</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>{profile.position} · Age {profile.age} · {profile.club}</div>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: "var(--white)", letterSpacing: 2 }}>{profile.name || "Your Name"}</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>{profile.position || "Position"} · Age {profile.age || "?"} · {profile.club || "Club"}</div>
             </div>
           </div>
           {fields.map(f => (
@@ -985,9 +1200,37 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           ))}
           <div className="form-group">
             <label className="form-label">Player Idols</label>
-            <input className="form-input" value={form.idols?.join(", ")} onChange={e => setForm(p => ({ ...p, idols: e.target.value.split(",").map(x => x.trim()) }))} />
+            <input className="form-input" value={form.idols?.join(", ")} onChange={e => setForm(p => ({ ...p, idols: e.target.value.split(",").map(x => x.trim()).filter(Boolean) }))} />
           </div>
-          <button className="btn btn-primary" onClick={() => { setProfile(form); notify("Profile saved ✅"); }}>Save Profile</button>
+          <button className="btn btn-primary" onClick={() => {
+            setProfile(form);
+            notify("Profile saved ✅");
+            dbPost("saveProfile", form);
+          }}>Save Profile</button>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Skill Scores (0–100)</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>Set your current skill levels to track progress over time.</div>
+          {SKILLS.map(s => (
+            <div className="form-group" key={s.id} style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <label className="form-label" style={{ marginBottom: 0 }}>{s.icon} {s.label}</label>
+                <span style={{ fontFamily: "'Bebas Neue'", fontSize: 18, color: s.color }}>{skillForm[s.id]}</span>
+              </div>
+              <input
+                type="range" min="0" max="100"
+                value={skillForm[s.id]}
+                onChange={e => setSkillForm(p => ({ ...p, [s.id]: parseInt(e.target.value) }))}
+                style={{ width: "100%", accentColor: s.color }}
+              />
+            </div>
+          ))}
+          <button className="btn btn-primary" onClick={() => {
+            setSkills(skillForm);
+            notify("Skills saved ✅");
+            dbPost("saveSkills", skillForm);
+          }}>Save Skills</button>
         </div>
       </div>
     );
@@ -1018,7 +1261,22 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
           ))}
           <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-            <button className="btn btn-primary" onClick={() => { setSessions(prev => [...prev, { id: Date.now(), ...ns, score: parseInt(ns.score), duration: parseInt(ns.duration) }]); setModal(null); notify("Session logged! ✅"); }}>✅ Save Session</button>
+            <button className="btn btn-primary" onClick={async () => {
+              const sessionData = { ...ns, score: parseInt(ns.score), duration: parseInt(ns.duration) };
+              setModal(null);
+              notify("Session logged! ✅");
+              try {
+                const res = await fetch("/api/db", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "addSession", userId, data: sessionData }),
+                });
+                const result = await res.json();
+                setSessions(prev => [...prev, { id: result.session?.id || Date.now(), ...sessionData }]);
+              } catch {
+                setSessions(prev => [...prev, { id: Date.now(), ...sessionData }]);
+              }
+            }}>✅ Save Session</button>
             <button className="btn btn-secondary" onClick={() => setModal(null)}>Cancel</button>
           </div>
         </div>
@@ -1040,6 +1298,10 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
   };
 
   const sections = [...new Set(NAV.map(n => n.section))];
+
+  if (!userId || dbLoading) {
+    return <LoginScreen onLogin={loadFromDb} loading={dbLoading} />;
+  }
 
   return (
     <div className="app-shell">
@@ -1065,9 +1327,19 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           ))}
         </div>
         <div style={{ padding: "14px 18px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--muted)" }}>
-          <div style={{ fontWeight: 700, color: "var(--white)", fontSize: 13 }}>{profile.name}</div>
-          <div>{profile.club}</div>
+          <div style={{ fontWeight: 700, color: "var(--white)", fontSize: 13 }}>{profile.name || "My Profile"}</div>
+          <div>{profile.club || <span style={{ opacity: 0.5 }}>{userId}</span>}</div>
           <div style={{ marginTop: 4 }}><span className="badge badge-green" style={{ fontSize: 9 }}>🎯 {daysToGoal}d to goal</span></div>
+          <button
+            style={{ marginTop: 10, background: "none", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 10, padding: "4px 10px", borderRadius: 6, width: "100%" }}
+            onClick={() => {
+              ["zeke_user_id", "zeke_profile", "zeke_skills", "zeke_sessions", "zeke_data_version"].forEach(k => localStorage.removeItem(k));
+              setUserId(null);
+              setProfile(DEFAULT_PROFILE);
+              setSkills(DEFAULT_SKILLS);
+              setSessions([]);
+            }}
+          >Sign out</button>
         </div>
       </nav>
 

@@ -1202,37 +1202,155 @@ Reference what elite attacking mids do at age ${profile.age}. Be direct and tech
   }
 
   function SharePage() {
+    const [emailTo, setEmailTo] = useState(profile.coachEmail || "");
+
+    const buildReportText = () => {
+      const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+      const skillLines = SKILLS.map(s => {
+        const cur = skills[s.id] || 0;
+        const tgt = targetBySkill[s.id];
+        const gap = tgt - cur;
+        return `  ${s.label.padEnd(12)}: ${String(cur).padStart(3)}/100  (target ${tgt}, gap ${gap > 0 ? "+" + gap : gap})`;
+      }).join("\n");
+      const recentSessions = sessions.length
+        ? [...sessions].reverse().slice(0, 10).map(s =>
+            `  ${s.date}  ${s.type.padEnd(14)}  ${String(s.duration).padStart(3)} min  Score: ${s.score}${s.notes ? "  — " + s.notes : ""}`
+          ).join("\n")
+        : "  No sessions logged yet.";
+      const totalHrs = (sessions.reduce((a, s) => a + s.duration, 0) / 60).toFixed(1);
+      const avgSc = sessions.length ? Math.round(sessions.reduce((a, s) => a + s.score, 0) / sessions.length) : 0;
+      const daysLeft = profile.targetYear ? Math.max(0, Math.floor((new Date(`${profile.targetYear}-06-01`) - new Date()) / 86400000)) : "—";
+
+      return `TRAINING REPORT — ${profile.name}
+Generated: ${date}
+${"─".repeat(50)}
+
+PLAYER PROFILE
+  Name        : ${profile.name}
+  Age         : ${profile.age}
+  Position    : ${profile.position}
+  Club        : ${profile.club || "—"}
+  Goal        : ${profile.goal}
+  Target Year : ${profile.targetYear}  (${daysLeft} days to go)
+
+TRAINING SUMMARY
+  Total Sessions : ${sessions.length}
+  Total Hours    : ${totalHrs} hrs
+  Average Score  : ${avgSc}/100
+
+CURRENT SKILL SCORES vs CONCACAF U15 TARGET
+${skillLines}
+
+RECENT SESSIONS (last 10)
+${recentSessions}
+
+${"─".repeat(50)}
+Sent via My Path — Zeke's Soccer Training App`;
+    };
+
+    const sendEmail = () => {
+      const to = emailTo.trim();
+      if (!to) { notify("Enter a coach email address first"); return; }
+      const subject = `Training Report — ${profile.name} — ${new Date().toLocaleDateString()}`;
+      const body = buildReportText();
+      window.open(`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+      notify("📧 Opening your email client...");
+    };
+
+    const copyLink = () => {
+      navigator.clipboard.writeText(window.location.href)
+        .then(() => notify("🔗 App link copied to clipboard!"))
+        .catch(() => notify("Copy failed — paste this URL manually: " + window.location.href));
+    };
+
+    const exportPrint = (title) => {
+      const prev = document.title;
+      document.title = `${title} — ${profile.name} — ${new Date().toLocaleDateString()}`;
+      window.print();
+      document.title = prev;
+    };
+
+    const downloadText = () => {
+      const text = buildReportText();
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Training-Report-${profile.name.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify("📄 Report downloaded!");
+    };
+
+    const exportOptions = [
+      {
+        label: "Training Summary PDF",
+        desc: "Full session log, skill scores, progress — print or save as PDF",
+        icon: "📄",
+        action: () => exportPrint("Training Summary"),
+      },
+      {
+        label: "Download Report (.txt)",
+        desc: "Plain-text report you can paste into any email or document",
+        icon: "📝",
+        action: downloadText,
+      },
+      {
+        label: "Player CV",
+        desc: "Professional player profile — print or save as PDF",
+        icon: "👤",
+        action: () => exportPrint("Player CV"),
+      },
+      {
+        label: "Progress Report",
+        desc: "Skill scores and development timeline — print or save as PDF",
+        icon: "📈",
+        action: () => exportPrint("Progress Report"),
+      },
+    ];
+
     return (
       <div style={{ maxWidth: 600 }}>
         <div className="card" style={{ marginBottom: 18 }}>
-          <div className="card-title">Share with Your Coach</div>
+          <div className="card-title">Send Report to Coach</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+            Generates a full report with your profile, skill scores, and session history and opens it in your email client ready to send.
+          </div>
           <div className="form-group">
             <label className="form-label">Coach's Email</label>
-            <input className="form-input" type="email" defaultValue={profile.coachEmail} />
+            <input
+              className="form-input"
+              type="email"
+              placeholder="coach@example.com"
+              value={emailTo}
+              onChange={e => setEmailTo(e.target.value)}
+            />
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            <button className="btn btn-primary" onClick={() => notify("📧 Training report sent to coach!")}>📧 Send Full Report</button>
-            <button className="btn btn-secondary" onClick={() => notify("🔗 Share link copied!")}>🔗 Copy Share Link</button>
+            <button className="btn btn-primary" onClick={sendEmail}>📧 Send Report</button>
+            <button className="btn btn-secondary" onClick={copyLink}>🔗 Copy App Link</button>
           </div>
         </div>
 
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-title">Export Options</div>
-          {[
-            { label: "Training Summary PDF", desc: "Full session log, skill scores, progress charts", icon: "📄" },
-            { label: "Player CV", desc: "Professional player profile for scouts/coaches", icon: "👤" },
-            { label: "Highlight Reel", desc: "Best clips compiled into shareable video", icon: "🎬" },
-            { label: "Progress Report", desc: "Week-by-week skill development with graphs", icon: "📈" },
-          ].map(e => (
+          {exportOptions.map(e => (
             <div key={e.label} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
               <span style={{ fontSize: 24 }}>{e.icon}</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 13 }}>{e.label}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>{e.desc}</div>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => notify(`📤 ${e.label} exported!`)}>Export</button>
+              <button className="btn btn-secondary btn-sm" onClick={e.action}>Export</button>
             </div>
           ))}
+        </div>
+
+        <div className="card">
+          <div className="card-title">Report Preview</div>
+          <pre style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "pre-wrap", lineHeight: 1.6, margin: 0, fontFamily: "monospace" }}>
+            {buildReportText()}
+          </pre>
         </div>
       </div>
     );

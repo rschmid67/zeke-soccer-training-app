@@ -486,18 +486,17 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     setVideoAnalysis(null);
 
     try {
-      const filename = file ? file.name : 'demo_xbotgo_session.mp4';
-      const frames = file ? await extractFrames(file) : [];
+      const formData = new FormData();
+      if (file) formData.append("video", file);
+      formData.append("profile", JSON.stringify(profile));
+      formData.append("skills", JSON.stringify(skills));
 
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename, profile, skills, frames }),
-      });
-      const { text } = await res.json();
+      const res = await fetch("/api/analyze", { method: "POST", body: formData });
+      const { text, error } = await res.json();
+      if (error) throw new Error(error);
       setVideoAnalysis(text);
-    } catch {
-      setVideoAnalysis("Analysis failed. Please check your connection and try again.");
+    } catch (err) {
+      setVideoAnalysis(`Analysis failed: ${err.message || "Check your connection and try again."}`);
     }
     setVideoLoading(false);
   };
@@ -842,8 +841,8 @@ Reference what elite attacking mids do at age ${profile.age}. Be direct and tech
         {videoLoading && (
           <div className="card" style={{ textAlign: "center", padding: 48 }}>
             <div style={{ fontSize: 40, marginBottom: 16, animation: "spin 1s linear infinite" }}>⚽</div>
-            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, letterSpacing: 2 }}>Analyzing your video...</div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>AI is studying your technique, speed, and positioning</div>
+            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, letterSpacing: 2 }}>Uploading & analyzing your video...</div>
+            <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>Gemini is watching the full clip — this may take 30–60 seconds</div>
           </div>
         )}
 

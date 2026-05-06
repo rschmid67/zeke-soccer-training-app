@@ -1,65 +1,164 @@
-import Anthropic from '@anthropic-ai/sdk';
+// Allow up to 60 s — Gemini video upload + processing + inference
+export const maxDuration = 60;
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const GEMINI_API = "https://generativelanguage.googleapis.com";
+
+// Poll until the uploaded file is ACTIVE (ready for inference)
+async function waitForActive(fileName, apiKey, maxMs = 45_000) {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(
+      `${GEMINI_API}/v1beta/${fileName}?key=${apiKey}`
+    );
+    const data = await res.json();
+    const state = data.state ?? data.file?.state;
+    if (state === "ACTIVE") return;
+    if (state === "FAILED") throw new Error("Gemini video processing failed");
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  throw new Error("Gemini video processing timed out — try a shorter clip");
+}
 
 export async function POST(request) {
-  const { filename, profile, skills, frames } = await request.json();
+  const API_KEY = process.env.GEMINI_API_KEY;
+  if (!API_KEY) {
+    return Response.json({ error: "GEMINI_API_KEY is not configured" }, { status: 500 });
+  }
+
+  const formData = await request.formData();
+  const video    = formData.get("video");   // File | null
+  const profile  = JSON.parse(formData.get("profile") || "{}");
+  const skills   = JSON.parse(formData.get("skills")  || "{}");
 
   const skillSummary = Object.entries(skills)
     .map(([k, v]) => `${k}: ${v}/100`)
     .join(", ");
 
-  const hasFrames = frames && frames.length > 0;
-
-  const textPrompt = hasFrames
-    ? `You are an elite soccer performance analyst. I'm sending you ${frames.length} frames extracted from a training video of ${profile.name} (age ${profile.age}, ${profile.position}).
-
-Current skill scores: ${skillSummary}
-Goal: ${profile.goal}
-
-Look carefully at each frame and analyze what you actually observe — body position, footwork, ball contact, posture, balance, and movement. Then provide:
-
-1. TECHNIQUE OBSERVATIONS (3-4 specific points based on what you see in the frames)
-2. STRENGTHS IDENTIFIED (2-3 positives visible in the footage)
-3. AREAS TO IMPROVE (2-3 specific weaknesses with drills to address them)
-4. SKILL SCORE ADJUSTMENTS (suggest +/- for relevant skills based on what you observed)
-5. NEXT SESSION FOCUS (1 priority drill with reps/sets in imperial units)
-
-Be specific and technical. Reference elite player comparisons where fitting. Use imperial units.`
-    : `You are an elite soccer performance analyst and coach. Provide a detailed training analysis for:
+  // ── No video — profile-based text analysis ─────────────────────────────
+  if (!video) {
+    const noVideoPrompt = `You are an expert soccer coach. Provide detailed position-specific coaching feedback for:
 
 Player: ${profile.name}, Age: ${profile.age}, Position: ${profile.position}
-Current skill scores: ${skillSummary}
 Goal: ${profile.goal}
+Current skill scores: ${skillSummary}
 
-Generate position-specific coaching feedback:
-1. TECHNIQUE FOCUS (3-4 key technical areas for a ${profile.position} at age ${profile.age})
-2. STRENGTHS TO BUILD ON (2-3 positives based on their skill scores)
-3. AREAS TO IMPROVE (2-3 specific weaknesses with drills to address them)
-4. SKILL SCORE ADJUSTMENTS (suggest +/- for relevant skills)
-5. NEXT SESSION FOCUS (1 priority drill with reps/sets in imperial units)
+Give:
+1. TECHNIQUE FOCUS (3-4 key areas for a ${profile.position} at age ${profile.age})
+2. STRENGTHS TO BUILD ON
+3. AREAS TO IMPROVE (with a specific drill for each)
+4. SKILL SCORE ADJUSTMENTS (suggest +/- based on the profile)
+5. NEXT SESSION PRIORITY (1 drill, reps/sets, imperial units)
 
-Be specific, technical, and reference elite player comparisons. Use imperial units.`;
+Be direct and technical. Use imperial units throughout.`;
 
-  const content = [];
-
-  if (hasFrames) {
-    for (const frame of frames) {
-      content.push({
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: frame },
-      });
-    }
+    const res = await fetch(
+      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: noVideoPrompt }] }] }),
+      }
+    );
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+    return Response.json({ text });
   }
 
-  content.push({ type: 'text', text: textPrompt });
+  // ── With video — Gemini File API flow ───────────────────────────────────
+  const videoBytes = Buffer.from(await video.arrayBuffer());
+  const mimeType   = video.type || "video/mp4";
+  const filename   = video.name || "training.mp4";
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content }],
-  });
+  // Step 1 — Upload video to Gemini File API (multipart)
+  const boundary = `GeminiBoundary${Date.now()}`;
+  const metaPart = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify({ file: { displayName: filename } })}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: ${mimeType}\r\n\r\n`
+  );
+  const endPart  = Buffer.from(`\r\n--${boundary}--`);
+  const body     = Buffer.concat([metaPart, videoBytes, endPart]);
 
-  const text = response.content[0]?.text ?? "Analysis complete.";
+  const uploadRes = await fetch(
+    `${GEMINI_API}/upload/v1beta/files?key=${API_KEY}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+        "Content-Length": String(body.length),
+      },
+      body,
+    }
+  );
+
+  if (!uploadRes.ok) {
+    const err = await uploadRes.text();
+    throw new Error(`Gemini upload failed (${uploadRes.status}): ${err}`);
+  }
+
+  const uploadData = await uploadRes.json();
+  const fileUri  = uploadData.file?.uri;
+  const fileName = uploadData.file?.name; // e.g. "files/abc123"
+
+  if (!fileUri) throw new Error("Gemini upload returned no file URI");
+
+  // Step 2 — Wait for the file to finish processing
+  await waitForActive(fileName, API_KEY);
+
+  // Step 3 — Analyse with Gemini 1.5 Pro (native video understanding)
+  const analysisPrompt =
+`You are an expert youth soccer coach reviewing a training video.
+
+Focus on player #13 wearing a white jersey and blue cleats.
+
+Player profile:
+  Name     : ${profile.name}
+  Age      : ${profile.age}
+  Position : ${profile.position}
+  Goal     : ${profile.goal}
+  Current skill scores: ${skillSummary}
+
+Watch the full video and provide specific coaching feedback:
+
+1. TECHNIQUE OBSERVATIONS — Footwork, first touch, ball control, shooting mechanics, passing technique. Quote specific timestamps where possible.
+2. POSITIONING & MOVEMENT — How #13 finds space, times runs, and shapes as an attacking mid off the ball.
+3. DECISION MAKING — Quality of decisions in possession and pressing moments.
+4. STRENGTHS — 2-3 genuine positives you can see in this footage.
+5. AREAS TO IMPROVE — 2-3 specific weaknesses, each with a named drill to address it.
+6. SKILL SCORE ADJUSTMENTS — Based only on what you watched, suggest a +/- adjustment for: dribbling, shooting, passing, speed, agility, positioning.
+7. NEXT SESSION PRIORITY — The single most important drill, with sets/reps in imperial units.
+
+Be technical and specific to what you actually observe. Reference what elite attacking mids do at age ${profile.age}. Use imperial units throughout.`;
+
+  const analysisRes = await fetch(
+    `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { fileData: { mimeType, fileUri } },
+            { text: analysisPrompt },
+          ],
+        }],
+        generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+      }),
+    }
+  );
+
+  if (!analysisRes.ok) {
+    const err = await analysisRes.text();
+    throw new Error(`Gemini analysis failed (${analysisRes.status}): ${err}`);
+  }
+
+  const analysisData = await analysisRes.json();
+  const text = analysisData.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+
+  // Step 4 — Delete the uploaded file (fire-and-forget cleanup)
+  fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
+
   return Response.json({ text });
 }

@@ -510,7 +510,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     setChatLoading(true);
 
     try {
-      // Extract 8 frames spread across the full video length
+      // Extract frames client-side, then send to Gemini via /api/analyze (60s timeout)
       const frames = await extractFrames(file, 8);
 
       if (frames.length === 0) {
@@ -523,49 +523,24 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
         return;
       }
 
-      const skillSummary = Object.entries(skills).map(([k, v]) => `${k}: ${v}/100`).join(", ");
+      const formData = new FormData();
+      formData.append("frames", JSON.stringify(frames));
+      formData.append("profile", JSON.stringify(profile));
+      formData.append("skills", JSON.stringify(skills));
 
-      // Build message content: image frames first, then the coaching prompt
-      const imageBlocks = frames.map(frame => ({
-        type: "image",
-        source: { type: "base64", media_type: "image/jpeg", data: frame },
-      }));
+      const res = await fetch("/api/analyze", { method: "POST", body: formData });
+      const { text, error } = await res.json();
+      if (error) throw new Error(error);
 
-      const analysisPrompt = `I'm sending you ${frames.length} frames extracted from ${profile.name}'s soccer training video (${filename}).
-
-Player: ${profile.name} | Age: ${profile.age} | Position: ${profile.position}
-Goal: ${profile.goal}
-Current skill scores: ${skillSummary}
-
-Study each frame carefully and give specific coaching feedback on what you actually observe:
-
-1. FOOTWORK & TECHNIQUE — Body shape, ball contact quality, first touch, plant foot position
-2. POSITIONING & MOVEMENT — Space awareness, timing of runs, shape as an attacking mid
-3. DECISION MAKING — Any visible choices on and off the ball
-4. STRENGTHS — 2-3 genuine positives visible in the footage
-5. PRIORITY DRILL — The single most important thing to fix, with a specific drill (reps/sets, imperial units)
-
-Reference what elite attacking mids do at age ${profile.age}. Be direct and technical.`;
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system: `You are Coach AI — an expert soccer coach for ${profile.name}, age ${profile.age}, ${profile.position}. Their goal: ${profile.goal}. You are analyzing real video frames they uploaded. Describe only what you can actually see.`,
-          messages: [{ role: "user", content: [...imageBlocks, { type: "text", text: analysisPrompt }] }],
-        }),
-      });
-
-      const { text, videos } = await res.json();
       setChatMessages(prev => [...prev, {
         role: "coach",
         text: text || "I reviewed your footage. Keep grinding — every session counts!",
-        videos: videos || [],
+        videos: [],
       }]);
-    } catch {
+    } catch (err) {
       setChatMessages(prev => [...prev, {
         role: "coach",
-        text: "Couldn't analyze that video — try a smaller clip or check your connection.",
+        text: `Couldn't analyze that video — ${err.message || "check your connection and try again."}`,
       }]);
     }
     setChatLoading(false);

@@ -29,10 +29,54 @@ export async function POST(request) {
   const video    = formData.get("video");   // File | null
   const profile  = JSON.parse(formData.get("profile") || "{}");
   const skills   = JSON.parse(formData.get("skills")  || "{}");
+  const frames   = JSON.parse(formData.get("frames")  || "[]"); // base64 JPEGs from client
 
   const skillSummary = Object.entries(skills)
     .map(([k, v]) => `${k}: ${v}/100`)
     .join(", ");
+
+  const coachingPrompt =
+`You are an expert youth soccer coach reviewing training footage of player #13 wearing a white jersey and blue cleats.
+
+Player profile:
+  Name     : ${profile.name}
+  Age      : ${profile.age}
+  Position : ${profile.position}
+  Goal     : ${profile.goal}
+  Current skill scores: ${skillSummary}
+
+Provide specific coaching feedback:
+
+1. TECHNIQUE OBSERVATIONS — Footwork, first touch, ball control, shooting mechanics, passing technique.
+2. POSITIONING & MOVEMENT — How #13 finds space, times runs, and shapes as an attacking mid off the ball.
+3. DECISION MAKING — Quality of decisions in possession and pressing moments.
+4. STRENGTHS — 2-3 genuine positives you can see in this footage.
+5. AREAS TO IMPROVE — 2-3 specific weaknesses, each with a named drill to address it.
+6. SKILL SCORE ADJUSTMENTS — Suggest a +/- adjustment for: dribbling, shooting, passing, speed, agility, positioning.
+7. NEXT SESSION PRIORITY — The single most important drill, with sets/reps in imperial units.
+
+Be technical and specific to what you actually observe. Reference what elite attacking mids do at age ${profile.age}. Use imperial units throughout.`;
+
+  // ── Frames mode — inline Gemini vision (from Coach AI) ─────────────────
+  if (!video && frames.length > 0) {
+    const imageParts = frames.map(b64 => ({
+      inlineData: { mimeType: "image/jpeg", data: b64 },
+    }));
+    const res = await fetch(
+      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [...imageParts, { text: coachingPrompt }] }],
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+        }),
+      }
+    );
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+    return Response.json({ text });
+  }
 
   // ── No video — profile-based text analysis ─────────────────────────────
   if (!video) {
@@ -108,30 +152,6 @@ Be direct and technical. Use imperial units throughout.`;
   await waitForActive(fileName, API_KEY);
 
   // Step 3 — Analyse with Gemini 1.5 Pro (native video understanding)
-  const analysisPrompt =
-`You are an expert youth soccer coach reviewing a training video.
-
-Focus on player #13 wearing a white jersey and blue cleats.
-
-Player profile:
-  Name     : ${profile.name}
-  Age      : ${profile.age}
-  Position : ${profile.position}
-  Goal     : ${profile.goal}
-  Current skill scores: ${skillSummary}
-
-Watch the full video and provide specific coaching feedback:
-
-1. TECHNIQUE OBSERVATIONS — Footwork, first touch, ball control, shooting mechanics, passing technique. Quote specific timestamps where possible.
-2. POSITIONING & MOVEMENT — How #13 finds space, times runs, and shapes as an attacking mid off the ball.
-3. DECISION MAKING — Quality of decisions in possession and pressing moments.
-4. STRENGTHS — 2-3 genuine positives you can see in this footage.
-5. AREAS TO IMPROVE — 2-3 specific weaknesses, each with a named drill to address it.
-6. SKILL SCORE ADJUSTMENTS — Based only on what you watched, suggest a +/- adjustment for: dribbling, shooting, passing, speed, agility, positioning.
-7. NEXT SESSION PRIORITY — The single most important drill, with sets/reps in imperial units.
-
-Be technical and specific to what you actually observe. Reference what elite attacking mids do at age ${profile.age}. Use imperial units throughout.`;
-
   const analysisRes = await fetch(
     `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
     {
@@ -141,7 +161,7 @@ Be technical and specific to what you actually observe. Reference what elite att
         contents: [{
           parts: [
             { fileData: { mimeType, fileUri } },
-            { text: analysisPrompt },
+            { text: `Watch the full video. Quote specific timestamps where possible.\n\n${coachingPrompt}` },
           ],
         }],
         generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },

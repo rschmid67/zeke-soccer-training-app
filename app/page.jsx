@@ -129,7 +129,7 @@ function LineChart({ data, color = "#00e676", width = 320, height = 80 }) {
 }
 
 // ── Chat Page (top-level so React never unmounts it on re-render) ─────────────
-function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, sendChat, fileRef }) {
+function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoadingMsg, sendChat, fileRef }) {
   const bottomRef = useRef();
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
@@ -175,7 +175,7 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, sendChat
             {chatLoading && (
               <div className="chat-msg">
                 <div className="chat-avatar coach">🧑‍🏫</div>
-                <div className="chat-bubble coach" style={{ color: "var(--muted)" }}>Coach is thinking...</div>
+                <div className="chat-bubble coach" style={{ color: "var(--muted)" }}>{chatLoadingMsg || "Coach is thinking..."}</div>
               </div>
             )}
             <div ref={bottomRef} />
@@ -310,6 +310,8 @@ export default function SoccerApp() {
   const [videoAnalysis, setVideoAnalysis] = useState(null);
   const [videoLoading, setVideoLoading] = useState(false);
   const [uploadedVideo, setUploadedVideo] = useState(null);
+  const [pendingVideo, setPendingVideo] = useState(null); // File waiting for player description
+  const [chatLoadingMsg, setChatLoadingMsg] = useState("Coach is thinking...");
   const fileRef = useRef();
   const chatFileRef = useRef();
 
@@ -438,6 +440,89 @@ export default function SoccerApp() {
   // ── API Chat ──────────────────────────────────────────────────────────────
   const sendChat = async (msg) => {
     if (!msg.trim()) return;
+
+    // ── Video analysis flow — user just provided the player description ───────
+    if (pendingVideo) {
+      const description = msg.trim();
+      const file = pendingVideo;
+      setPendingVideo(null);
+
+      setChatMessages(prev => [...prev, { role: "user", text: description }]);
+      setChatInput("");
+      setChatLoading(true);
+
+      try {
+        // Phase 1 — Ask the server to create a Gemini resumable upload session
+        setChatLoadingMsg("Starting upload to Gemini...");
+        const sessionRes = await fetch("/api/analyze-upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mimeType: file.type || "video/mp4",
+            filename: file.name,
+            fileSize: file.size,
+          }),
+        });
+        const { uploadUrl, error: sessionErr } = await sessionRes.json();
+        if (sessionErr) throw new Error(sessionErr);
+
+        // Phase 2 — Client uploads the video file directly to Gemini's session URL
+        const sizeMB = Math.round(file.size / 1024 / 1024);
+        setChatLoadingMsg(`Uploading ${sizeMB} MB to Gemini...`);
+
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "X-Goog-Upload-Offset": "0",
+            "X-Goog-Upload-Command": "upload, finalize",
+          },
+          body: file,
+        });
+
+        if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status})`);
+
+        const uploadData = await uploadRes.json();
+        const fileUri  = uploadData.file?.uri;
+        const fileName = uploadData.file?.name;
+        if (!fileUri) throw new Error("No file URI returned from Gemini");
+
+        // Phase 3 — Server waits for ACTIVE then runs generateContent
+        setChatLoadingMsg("Upload complete! Gemini is watching the full video (30–60 seconds)...");
+
+        const analyzeRes = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileUri,
+            fileName,
+            mimeType: file.type || "video/mp4",
+            description,
+            profile,
+            skills,
+          }),
+        });
+
+        const { text, error: analyzeErr } = await analyzeRes.json();
+        if (analyzeErr) throw new Error(analyzeErr);
+
+        setChatMessages(prev => [...prev, {
+          role: "coach",
+          text: text || "Analysis complete — keep grinding!",
+          videos: [],
+        }]);
+      } catch (err) {
+        setChatMessages(prev => [...prev, {
+          role: "coach",
+          text: `Video analysis failed: ${err.message || "check your connection and try again."}`,
+        }]);
+      }
+
+      setChatLoading(false);
+      setChatLoadingMsg("Coach is thinking...");
+      return;
+    }
+
+    // ── Normal Claude chat ────────────────────────────────────────────────────
     const userMsg = { role: "user", text: msg };
     const newHistory = [...chatMessages, userMsg];
     setChatMessages(newHistory);
@@ -502,48 +587,17 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
   };
 
   // ── Video-in-Chat ─────────────────────────────────────────────────────────
-  const sendVideoToChat = async (file) => {
+  const sendVideoToChat = (file) => {
     if (!file) return;
-    const filename = file.name;
-
-    setChatMessages(prev => [...prev, { role: "user", text: `📹 Analyzing video: ${filename}` }]);
-    setChatLoading(true);
-
-    try {
-      // Extract frames client-side, then send to Gemini via /api/analyze (60s timeout)
-      const frames = await extractFrames(file, 8);
-
-      if (frames.length === 0) {
-        setChatMessages(prev => [...prev, {
-          role: "coach",
-          text: "I couldn't read frames from that video. Try saving it as MP4 or MOV and upload again.",
-          videos: [],
-        }]);
-        setChatLoading(false);
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append("frames", JSON.stringify(frames));
-      formData.append("profile", JSON.stringify(profile));
-      formData.append("skills", JSON.stringify(skills));
-
-      const res = await fetch("/api/analyze", { method: "POST", body: formData });
-      const { text, error } = await res.json();
-      if (error) throw new Error(error);
-
-      setChatMessages(prev => [...prev, {
+    setPendingVideo(file);
+    const playerName = profile.name || "Zeke";
+    setChatMessages(prev => [...prev,
+      { role: "user", text: `📹 Uploaded: ${file.name}` },
+      {
         role: "coach",
-        text: text || "I reviewed your footage. Keep grinding — every session counts!",
-        videos: [],
-      }]);
-    } catch (err) {
-      setChatMessages(prev => [...prev, {
-        role: "coach",
-        text: `Couldn't analyze that video — ${err.message || "check your connection and try again."}`,
-      }]);
-    }
-    setChatLoading(false);
+        text: `Got the video! Before I start the analysis, help me find ${playerName}.\n\nWhat jersey color and number is he wearing? Any other standout details (bright cleats, hair, height)?\n\nAlso: is this game footage or a training/solo session? Type your answer and hit Send.`,
+      },
+    ]);
   };
 
   // ── Pages ─────────────────────────────────────────────────────────────────
@@ -1454,7 +1508,7 @@ Sent via My Path — Zeke's Soccer Training App`;
     progress: { title: "My Progress", sub: "Skill development vs CONCACAF target", comp: <ProgressPage /> },
     calendar: { title: "Calendar", sub: "View & schedule all training sessions", comp: <CalendarPage /> },
     plan: { title: "Training Plan", sub: "AI-personalized path to your goals", comp: <PlanPage /> },
-    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} sendChat={sendChat} fileRef={chatFileRef} /> },
+    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} chatLoadingMsg={chatLoadingMsg} sendChat={sendChat} fileRef={chatFileRef} /> },
     highlights: { title: "Highlights & CV", sub: "Create and share your player profile", comp: <HighlightsPage /> },
     share: { title: "Share & Export", sub: "Send reports and highlights to coaches & scouts", comp: <SharePage /> },
     settings: { title: "My Profile", sub: "Update your details, goals & preferences", comp: <SettingsPage /> },

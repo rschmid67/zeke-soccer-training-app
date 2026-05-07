@@ -25,6 +25,112 @@ export async function POST(request) {
     return Response.json({ error: "GEMINI_API_KEY is not configured" }, { status: 500 });
   }
 
+  // ── JSON body — post-upload analysis (Coach AI Gemini File API flow) ─────
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const { fileUri, fileName, mimeType: fileMime, description, profile, skills } = await request.json();
+
+    const skillSummary = Object.entries(skills || {})
+      .map(([k, v]) => `${k}: ${v}/100`)
+      .join(", ");
+
+    await waitForActive(fileName, API_KEY);
+
+    const prompt =
+`You are an elite youth soccer development coach conducting a video performance review.
+
+PLAYER TO FIND: ${description}
+Focus exclusively on this player throughout the entire video. Ignore all other players.
+
+Player profile:
+  Name     : ${profile.name || "Zeke"}
+  Age      : ${profile.age || 11}
+  Position : ${profile.position || "Attacking Mid"}
+  Goal     : ${profile.goal || "Make CONCACAF U15 Cup team in 2029"}
+  Current skill scores: ${skillSummary}
+
+STEP 1 — VIDEO TYPE: Determine if this is:
+• GAME FOOTAGE — a match with multiple players on a full field
+• TRAINING FOOTAGE — individual drills, solo practice, or skills work
+State which it is at the very start.
+
+STEP 2 — FULL COACHING ANALYSIS:
+
+1. TECHNICAL SKILLS (with timestamps where possible):
+   - First touch: quality, direction, setting up next action
+   - Passing: accuracy, weight, choice of target
+   - Dribbling: close control, change of direction, speed on the ball
+   - Shooting: mechanics, placement, decision to shoot
+
+2. MOVEMENT & POSITIONING:
+   - Movement off the ball, ability to find pockets of space
+   - Body shape when receiving under pressure
+   - Timing of runs (game: runs in behind, across, checking in; training: body shape across reps)
+
+3. DECISION MAKING & SOCCER IQ:
+   - When to pass vs dribble vs shoot
+   - Pressing triggers and defensive work-rate
+   - Vision — can the player play forward or see the next pass early?
+
+4. PHYSICAL ATTRIBUTES:
+   - Speed with and without the ball (reference yards/mph where possible)
+   - Agility and quickness of direction changes
+   - Physical presence in duels (game footage)
+
+5. IF GAME FOOTAGE — Performance under pressure:
+   - Composure when pressed by opponents
+   - Link-up play and combination passing with teammates
+   - Moments that created danger or where opportunities were missed
+
+   IF TRAINING FOOTAGE — Technique quality:
+   - Consistency of technique across repetitions
+   - Training intensity and intentionality
+   - Which technical flaws repeat across reps
+
+6. STRENGTHS — 2-3 genuine positives visible in this footage
+
+7. AREAS TO IMPROVE — 2-3 specific weaknesses, each with:
+   - A named drill to address it
+   - Sets/reps in imperial units
+
+8. CONCACAF U15 2029 READINESS:
+   - What does an elite ${profile.age || 11}-year-old Attacking Mid targeting U15 national selection look like?
+   - What specific gaps exist between this player and that standard?
+   - The single most important thing to improve right now
+
+Quote specific timestamps for key moments. Be honest, technical, and direct. Use imperial units throughout.`;
+
+    const res = await fetch(
+      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { fileData: { mimeType: fileMime || "video/mp4", fileUri } },
+              { text: prompt },
+            ],
+          }],
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Gemini analysis failed (${res.status}): ${err}`);
+    }
+
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+
+    fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
+
+    return Response.json({ text });
+  }
+
+  // ── FormData body — Video Analysis tab or frames from chat ────────────────
   const formData = await request.formData();
   const video    = formData.get("video");   // File | null
   const profile  = JSON.parse(formData.get("profile") || "{}");

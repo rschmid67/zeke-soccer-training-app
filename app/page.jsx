@@ -452,56 +452,24 @@ export default function SoccerApp() {
       setChatLoading(true);
 
       try {
-        // Phase 1 — Ask the server to create a Gemini resumable upload session
-        setChatLoadingMsg("Starting upload to Gemini...");
-        const sessionRes = await fetch("/api/analyze-upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mimeType: file.type || "video/mp4",
-            filename: file.name,
-            fileSize: file.size,
-          }),
-        });
-        const { uploadUrl, error: sessionErr } = await sessionRes.json();
-        if (sessionErr) throw new Error(sessionErr);
+        // Extract frames from the video client-side
+        setChatLoadingMsg("Reading video frames...");
+        const frames = await extractFrames(file, 8);
 
-        // Phase 2 — Client uploads the video file directly to Gemini's session URL
-        const sizeMB = Math.round(file.size / 1024 / 1024);
-        setChatLoadingMsg(`Uploading ${sizeMB} MB to Gemini...`);
+        if (frames.length === 0) {
+          throw new Error("Couldn't read frames — try MP4 or MOV format");
+        }
 
-        const uploadRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "X-Goog-Upload-Offset": "0",
-            "X-Goog-Upload-Command": "upload, finalize",
-          },
-          body: file,
-        });
+        // Send frames + description to Gemini via /api/analyze
+        setChatLoadingMsg("Sending frames to Gemini for analysis (30–60 seconds)...");
 
-        if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status})`);
+        const formData = new FormData();
+        formData.append("frames", JSON.stringify(frames));
+        formData.append("description", description);
+        formData.append("profile", JSON.stringify(profile));
+        formData.append("skills", JSON.stringify(skills));
 
-        const uploadData = await uploadRes.json();
-        const fileUri  = uploadData.file?.uri;
-        const fileName = uploadData.file?.name;
-        if (!fileUri) throw new Error("No file URI returned from Gemini");
-
-        // Phase 3 — Server waits for ACTIVE then runs generateContent
-        setChatLoadingMsg("Upload complete! Gemini is watching the full video (30–60 seconds)...");
-
-        const analyzeRes = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileUri,
-            fileName,
-            mimeType: file.type || "video/mp4",
-            description,
-            profile,
-            skills,
-          }),
-        });
-
+        const analyzeRes = await fetch("/api/analyze", { method: "POST", body: formData });
         const { text, error: analyzeErr } = await analyzeRes.json();
         if (analyzeErr) throw new Error(analyzeErr);
 

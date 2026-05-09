@@ -132,14 +132,103 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
 
   // ── FormData body — Video Analysis tab or frames from chat ────────────────
   const formData = await request.formData();
-  const video    = formData.get("video");   // File | null
-  const profile  = JSON.parse(formData.get("profile") || "{}");
-  const skills   = JSON.parse(formData.get("skills")  || "{}");
-  const frames   = JSON.parse(formData.get("frames")  || "[]"); // base64 JPEGs from client
+  const video       = formData.get("video");   // File | null
+  const profile     = JSON.parse(formData.get("profile")     || "{}");
+  const skills      = JSON.parse(formData.get("skills")      || "{}");
+  const frames      = JSON.parse(formData.get("frames")      || "[]");
+  const description = formData.get("description") || ""; // user's description of Zeke
 
   const skillSummary = Object.entries(skills)
     .map(([k, v]) => `${k}: ${v}/100`)
     .join(", ");
+
+  // ── Frames mode — inline Gemini vision (from Coach AI after description) ─
+  if (!video && frames.length > 0) {
+    const playerID = description
+      ? `PLAYER TO FIND: ${description}\nFocus exclusively on this player in every frame. Ignore all other players.`
+      : `Focus on player #13 wearing a white jersey and blue cleats.`;
+
+    const framesPrompt =
+`You are an elite youth soccer development coach analyzing ${frames.length} frames extracted from a soccer video.
+
+${playerID}
+
+Player profile:
+  Name     : ${profile.name || "Zeke"}
+  Age      : ${profile.age || 11}
+  Position : ${profile.position || "Attacking Mid"}
+  Goal     : ${profile.goal || "Make CONCACAF U15 Cup team in 2029"}
+  Current skill scores: ${skillSummary}
+
+STEP 1 — VIDEO TYPE: From the frames, determine if this is:
+• GAME FOOTAGE — a match with multiple players on a full field
+• TRAINING FOOTAGE — individual drills, solo practice, or skills work
+State which at the start.
+
+STEP 2 — COACHING ANALYSIS (base everything on what you can actually observe):
+
+1. TECHNICAL SKILLS:
+   - First touch: quality, body shape, direction it sets up
+   - Passing: accuracy, weight, choice of target
+   - Dribbling: close control, ability to change direction under pressure
+   - Shooting: mechanics, body shape, placement (if visible)
+
+2. MOVEMENT & POSITIONING:
+   - Movement off the ball, ability to find space
+   - Body shape when receiving — can the player play forward?
+   - Timing and quality of runs (game: runs in behind or across; training: repetition quality)
+
+3. DECISION MAKING & SOCCER IQ:
+   - Pass vs dribble vs shoot choices
+   - Defensive pressure awareness and pressing work-rate
+   - Vision — does the player look before receiving?
+
+4. PHYSICAL ATTRIBUTES:
+   - Speed with and without the ball
+   - Agility, quickness of direction change
+   - Physical presence in challenges (game footage)
+
+5. IF GAME FOOTAGE — Under-pressure performance:
+   - Composure when closed down
+   - Link-up play with teammates
+   - Moments that created or wasted chances
+
+   IF TRAINING FOOTAGE — Technique quality:
+   - Consistency across repetitions
+   - Training intensity and focus
+   - Recurring technical flaws
+
+6. STRENGTHS — 2-3 genuine positives visible in these frames
+
+7. AREAS TO IMPROVE — 2-3 specific weaknesses, each with:
+   - A named drill to fix it
+   - Sets/reps in imperial units
+
+8. CONCACAF U15 2029 READINESS:
+   - What does an elite ${profile.age || 11}-year-old Attacking Mid targeting U15 national selection look like?
+   - What are the specific gaps between this player and that standard?
+   - The single most important thing to improve right now
+
+Be honest, direct, and technical. Use imperial units throughout.`;
+
+    const imageParts = frames.map(b64 => ({
+      inlineData: { mimeType: "image/jpeg", data: b64 },
+    }));
+    const res = await fetch(
+      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [...imageParts, { text: framesPrompt }] }],
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+        }),
+      }
+    );
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+    return Response.json({ text });
+  }
 
   const coachingPrompt =
 `You are an expert youth soccer coach reviewing training footage of player #13 wearing a white jersey and blue cleats.
@@ -162,27 +251,6 @@ Provide specific coaching feedback:
 7. NEXT SESSION PRIORITY — The single most important drill, with sets/reps in imperial units.
 
 Be technical and specific to what you actually observe. Reference what elite attacking mids do at age ${profile.age}. Use imperial units throughout.`;
-
-  // ── Frames mode — inline Gemini vision (from Coach AI) ─────────────────
-  if (!video && frames.length > 0) {
-    const imageParts = frames.map(b64 => ({
-      inlineData: { mimeType: "image/jpeg", data: b64 },
-    }));
-    const res = await fetch(
-      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [...imageParts, { text: coachingPrompt }] }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
-        }),
-      }
-    );
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
-    return Response.json({ text });
-  }
 
   // ── No video — profile-based text analysis ─────────────────────────────
   if (!video) {

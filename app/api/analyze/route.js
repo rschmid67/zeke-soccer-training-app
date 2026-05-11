@@ -278,7 +278,11 @@ Be direct and technical. Use imperial units throughout.`;
       }
     );
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      const reason = data.error?.message || data.promptFeedback?.blockReason || JSON.stringify(data);
+      throw new Error(`Gemini returned no analysis: ${reason}`);
+    }
     return Response.json({ text });
   }
 

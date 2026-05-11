@@ -452,24 +452,62 @@ export default function SoccerApp() {
       setChatLoading(true);
 
       try {
-        // Extract frames from the video client-side
-        setChatLoadingMsg("Reading video frames...");
-        const frames = await extractFrames(file, 8);
+        // Get Gemini API key from server so the browser can upload directly to Google
+        // (bypasses Netlify's 6 MB function body limit for large video files)
+        setChatLoadingMsg("Preparing upload...");
+        const keyRes = await fetch("/api/gemini-key");
+        const { key: geminiKey, error: keyErr } = await keyRes.json();
+        if (keyErr || !geminiKey) throw new Error(keyErr || "Could not get upload credentials");
 
-        if (frames.length === 0) {
-          throw new Error("Couldn't read frames — try MP4 or MOV format");
+        const mimeType = file.type || "video/mp4";
+        const sizeMB   = Math.round(file.size / 1024 / 1024);
+
+        // Phase 1 — Initiate a Gemini resumable upload session (client → Google directly)
+        setChatLoadingMsg(`Uploading ${sizeMB} MB to Gemini...`);
+        const sessionRes = await fetch(
+          `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: {
+              "X-Goog-Upload-Protocol": "resumable",
+              "X-Goog-Upload-Command": "start",
+              "X-Goog-Upload-Header-Content-Length": String(file.size),
+              "X-Goog-Upload-Header-Content-Type": mimeType,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ file: { display_name: file.name } }),
+          }
+        );
+        if (!sessionRes.ok) {
+          const errText = await sessionRes.text();
+          throw new Error(`Upload init failed (${sessionRes.status}): ${errText}`);
         }
+        const uploadUrl = sessionRes.headers.get("X-Goog-Upload-URL");
+        if (!uploadUrl) throw new Error("Gemini did not return an upload URL — CORS may be blocking the response header");
 
-        // Send frames + description to Gemini via /api/analyze
-        setChatLoadingMsg("Sending frames to Gemini for analysis (30–60 seconds)...");
+        // Phase 2 — Upload the full video bytes to the session URL
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "X-Goog-Upload-Offset": "0",
+            "X-Goog-Upload-Command": "upload, finalize",
+          },
+          body: file,
+        });
+        if (!uploadRes.ok) throw new Error(`Video upload failed (${uploadRes.status})`);
 
-        const formData = new FormData();
-        formData.append("frames", JSON.stringify(frames));
-        formData.append("description", description);
-        formData.append("profile", JSON.stringify(profile));
-        formData.append("skills", JSON.stringify(skills));
+        const uploadData = await uploadRes.json();
+        const fileUri  = uploadData.file?.uri;
+        const fileName = uploadData.file?.name;
+        if (!fileUri) throw new Error("No file URI returned from Gemini");
 
-        const analyzeRes = await fetch("/api/analyze", { method: "POST", body: formData });
+        // Phase 3 — Server polls for ACTIVE then calls generateContent
+        setChatLoadingMsg("Upload complete! Gemini is watching the full video (30–60 seconds)...");
+        const analyzeRes = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileUri, fileName, mimeType, description, profile, skills }),
+        });
         const { text, error: analyzeErr } = await analyzeRes.json();
         if (analyzeErr) throw new Error(analyzeErr);
 

@@ -4,3 +4,7 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+[[edge_functions]]
+  path = "/api/upload-chunk"
+  function = "upload-chunk"

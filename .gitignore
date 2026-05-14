@@ -10,6 +10,9 @@ out/
 .env.local
 .env.*.local
 
+# Netlify build cache
+.netlify/
+
 # Misc
 .DS_Store
 *.pem

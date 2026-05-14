@@ -415,7 +415,7 @@ export default function SoccerApp() {
         // Phase 2 — Upload video in 4 MB chunks through the server.
         // Direct browser → Gemini PUT is blocked by CORS on the upload endpoint.
         // Each chunk is well within Netlify's 6 MB function body limit.
-        const CHUNK   = 4 * 1024 * 1024;
+        const CHUNK   = 8 * 1024 * 1024; // Gemini requires multiples of 8 MB for non-final chunks
         const sizeMB  = (file.size / 1024 / 1024).toFixed(1);
         const total   = Math.ceil(file.size / CHUNK);
         let fileUri, fileName;

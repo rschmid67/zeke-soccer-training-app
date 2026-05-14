@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(git:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh api:*)",
+      "Bash(gh repo:*)",
+      "Bash(netlify:*)",
+      "Bash(__NEW_LINE_04dc8246c0a6c04b__ curl:*)",
+      "Bash(__NEW_LINE_04206ae03f8af173__ curl:*)",
+      "Bash(__NEW_LINE_9eaf7fa2ea0d61ac__ curl:*)",
+      "Bash(curl:*)",
+      "Bash(start:*)",
+      "Bash(__NEW_LINE_a5db85c22d0bebb6__ curl:*)",
+      "Bash(rm:*)"
+    ]
+  }
+}

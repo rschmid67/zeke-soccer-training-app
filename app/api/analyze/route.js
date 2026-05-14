@@ -123,7 +123,16 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
     }
 
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+    console.log("[analyze] JSON body flow — Gemini raw response:", JSON.stringify(data).slice(0, 500));
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      const finishReason = data.candidates?.[0]?.finishReason;
+      const reason = data.error?.message
+        || (finishReason && finishReason !== "STOP" ? `Finish reason: ${finishReason}` : null)
+        || data.promptFeedback?.blockReason
+        || JSON.stringify(data).slice(0, 300);
+      return Response.json({ error: `Gemini returned no analysis text: ${reason}` }, { status: 500 });
+    }
 
     fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
 
@@ -226,7 +235,16 @@ Be honest, direct, and technical. Use imperial units throughout.`;
       }
     );
     const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+    console.log("[analyze] Frames flow — Gemini raw response:", JSON.stringify(data).slice(0, 500));
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      const finishReason = data.candidates?.[0]?.finishReason;
+      const reason = data.error?.message
+        || (finishReason && finishReason !== "STOP" ? `Finish reason: ${finishReason}` : null)
+        || data.promptFeedback?.blockReason
+        || JSON.stringify(data).slice(0, 300);
+      return Response.json({ error: `Gemini returned no analysis text: ${reason}` }, { status: 500 });
+    }
     return Response.json({ text });
   }
 
@@ -353,7 +371,16 @@ Be direct and technical. Use imperial units throughout.`;
   }
 
   const analysisData = await analysisRes.json();
-  const text = analysisData.candidates?.[0]?.content?.parts?.[0]?.text ?? "Analysis complete.";
+  console.log("[analyze] FormData video flow — Gemini raw response:", JSON.stringify(analysisData).slice(0, 500));
+  const text = analysisData.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    const finishReason = analysisData.candidates?.[0]?.finishReason;
+    const reason = analysisData.error?.message
+      || (finishReason && finishReason !== "STOP" ? `Finish reason: ${finishReason}` : null)
+      || analysisData.promptFeedback?.blockReason
+      || JSON.stringify(analysisData).slice(0, 300);
+    throw new Error(`Gemini returned no analysis text: ${reason}`);
+  }
 
   // Step 4 — Delete the uploaded file (fire-and-forget cleanup)
   fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});

@@ -204,29 +204,39 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoad
 
 // ── Video Frame Extraction ────────────────────────────────────────────────────
 function extractFrames(file, count = 8) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     const frames = [];
     let index = 0;
     let settled = false;
+    // Keep blob URL in a local var — never rely on video.src after it may be cleared
+    const blobUrl = URL.createObjectURL(file);
 
-    const finish = () => {
+    const finish = (err) => {
       if (settled) return;
       settled = true;
-      if (video.src) URL.revokeObjectURL(video.src);
-      resolve(frames);
+      clearTimeout(timer);
+      // Abort all pending network/decode activity BEFORE revoking the blob,
+      // so the browser never tries to re-fetch it and gets ERR_FILE_NOT_FOUND.
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      URL.revokeObjectURL(blobUrl);
+      if (err) reject(err);
+      else resolve(frames);
     };
 
-    // Safety timeout — resolve with whatever frames we have after 20s
-    const timer = setTimeout(finish, 20000);
+    // Safety timeout — resolve with whatever frames we have after 20 s
+    const timer = setTimeout(() => {
+      finish(frames.length > 0 ? null : new Error("Frame extraction timed out — try a shorter clip"));
+    }, 20000);
 
     const seekNext = () => {
-      if (index >= count) { clearTimeout(timer); finish(); return; }
+      if (index >= count) { finish(null); return; }
       const dur = Number.isFinite(video.duration) && video.duration > 0
-        ? video.duration
-        : 30;
+        ? video.duration : 30;
       // Avoid t=0 which often returns a black frame
       video.currentTime = Math.max(0.1, ((index + 0.5) / count) * dur);
     };
@@ -240,18 +250,26 @@ function extractFrames(file, count = 8) {
     };
 
     video.onseeked = () => {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-      if (b64) frames.push(b64);
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+        if (b64) frames.push(b64);
+      } catch (_) { /* skip blank frame */ }
       index++;
       seekNext();
     };
 
-    video.onerror = () => { clearTimeout(timer); finish(); };
+    video.onerror = () => {
+      finish(new Error(`Could not read video file — try converting to MP4 (error code: ${video.error?.code ?? '?'})`));
+    };
+
     video.muted = true;
     video.playsInline = true;
-    video.preload = 'metadata';
-    video.src = URL.createObjectURL(file);
+    // 'auto' preloads the full file so frame data is ready at any seek position.
+    // 'metadata' only fetches the header — seeking then triggers range requests
+    // that fail with ERR_FILE_NOT_FOUND after the blob is revoked.
+    video.preload = 'auto';
+    video.src = blobUrl;
   });
 }
 
@@ -452,68 +470,28 @@ export default function SoccerApp() {
       setChatLoading(true);
 
       try {
-        // Get Gemini API key from server so the browser can upload directly to Google
-        // (bypasses Netlify's 6 MB function body limit for large video files)
-        setChatLoadingMsg("Preparing upload...");
-        const keyRes = await fetch("/api/gemini-key");
-        const { key: geminiKey, error: keyErr } = await keyRes.json();
-        if (keyErr || !geminiKey) throw new Error(keyErr || "Could not get upload credentials");
+        // Phase 1 — Extract frames locally (avoids CORS issues with client-side uploads)
+        setChatLoadingMsg("Extracting frames from video...");
+        const frames = await extractFrames(file, 8);
+        if (frames.length === 0) throw new Error("No frames could be extracted — is the file a valid video?");
 
-        const mimeType = file.type || "video/mp4";
-        const sizeMB   = Math.round(file.size / 1024 / 1024);
+        // Phase 2 — Send frames to server; Gemini analyses them as inline images
+        setChatLoadingMsg(`Analysing ${frames.length} frames with Gemini...`);
+        const formData = new FormData();
+        formData.append("frames", JSON.stringify(frames));
+        formData.append("description", description);
+        formData.append("profile", JSON.stringify(profile));
+        formData.append("skills", JSON.stringify(skills));
 
-        // Phase 1 — Initiate a Gemini resumable upload session (client → Google directly)
-        setChatLoadingMsg(`Uploading ${sizeMB} MB to Gemini...`);
-        const sessionRes = await fetch(
-          `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${geminiKey}`,
-          {
-            method: "POST",
-            headers: {
-              "X-Goog-Upload-Protocol": "resumable",
-              "X-Goog-Upload-Command": "start",
-              "X-Goog-Upload-Header-Content-Length": String(file.size),
-              "X-Goog-Upload-Header-Content-Type": mimeType,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ file: { display_name: file.name } }),
-          }
-        );
-        if (!sessionRes.ok) {
-          const errText = await sessionRes.text();
-          throw new Error(`Upload init failed (${sessionRes.status}): ${errText}`);
-        }
-        const uploadUrl = sessionRes.headers.get("X-Goog-Upload-URL");
-        if (!uploadUrl) throw new Error("Gemini did not return an upload URL — CORS may be blocking the response header");
-
-        // Phase 2 — Upload the full video bytes to the session URL
-        const uploadRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "X-Goog-Upload-Offset": "0",
-            "X-Goog-Upload-Command": "upload, finalize",
-          },
-          body: file,
-        });
-        if (!uploadRes.ok) throw new Error(`Video upload failed (${uploadRes.status})`);
-
-        const uploadData = await uploadRes.json();
-        const fileUri  = uploadData.file?.uri;
-        const fileName = uploadData.file?.name;
-        if (!fileUri) throw new Error("No file URI returned from Gemini");
-
-        // Phase 3 — Server polls for ACTIVE then calls generateContent
-        setChatLoadingMsg("Upload complete! Gemini is watching the full video (30–60 seconds)...");
-        const analyzeRes = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileUri, fileName, mimeType, description, profile, skills }),
-        });
-        const { text, error: analyzeErr } = await analyzeRes.json();
-        if (analyzeErr) throw new Error(analyzeErr);
+        const analyzeRes = await fetch("/api/analyze", { method: "POST", body: formData });
+        const payload = await analyzeRes.json();
+        console.log("[chat] /api/analyze response:", payload);
+        if (payload.error) throw new Error(payload.error);
+        if (!payload.text) throw new Error("Gemini returned an empty response — try a shorter clip");
 
         setChatMessages(prev => [...prev, {
           role: "coach",
-          text: text || "Analysis complete — keep grinding!",
+          text: payload.text,
           videos: [],
         }]);
       } catch (err) {

@@ -202,77 +202,6 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoad
   );
 }
 
-// ── Video Frame Extraction ────────────────────────────────────────────────────
-function extractFrames(file, count = 8) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const frames = [];
-    let index = 0;
-    let settled = false;
-    // Keep blob URL in a local var — never rely on video.src after it may be cleared
-    const blobUrl = URL.createObjectURL(file);
-
-    const finish = (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      // Abort all pending network/decode activity BEFORE revoking the blob,
-      // so the browser never tries to re-fetch it and gets ERR_FILE_NOT_FOUND.
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-      URL.revokeObjectURL(blobUrl);
-      if (err) reject(err);
-      else resolve(frames);
-    };
-
-    // Safety timeout — resolve with whatever frames we have after 20 s
-    const timer = setTimeout(() => {
-      finish(frames.length > 0 ? null : new Error("Frame extraction timed out — try a shorter clip"));
-    }, 20000);
-
-    const seekNext = () => {
-      if (index >= count) { finish(null); return; }
-      const dur = Number.isFinite(video.duration) && video.duration > 0
-        ? video.duration : 30;
-      // Avoid t=0 which often returns a black frame
-      video.currentTime = Math.max(0.1, ((index + 0.5) / count) * dur);
-    };
-
-    video.onloadedmetadata = () => {
-      canvas.width = Math.min(video.videoWidth || 640, 512);
-      canvas.height = video.videoHeight
-        ? Math.round(canvas.width * video.videoHeight / video.videoWidth)
-        : 288;
-      seekNext();
-    };
-
-    video.onseeked = () => {
-      try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-        if (b64) frames.push(b64);
-      } catch (_) { /* skip blank frame */ }
-      index++;
-      seekNext();
-    };
-
-    video.onerror = () => {
-      finish(new Error(`Could not read video file — try converting to MP4 (error code: ${video.error?.code ?? '?'})`));
-    };
-
-    video.muted = true;
-    video.playsInline = true;
-    // 'auto' preloads the full file so frame data is ready at any seek position.
-    // 'metadata' only fetches the header — seeking then triggers range requests
-    // that fail with ERR_FILE_NOT_FOUND after the blob is revoked.
-    video.preload = 'auto';
-    video.src = blobUrl;
-  });
-}
-
 // ── Login Screen ──────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin, loading }) {
   const [code, setCode] = useState("");
@@ -470,20 +399,49 @@ export default function SoccerApp() {
       setChatLoading(true);
 
       try {
-        // Phase 1 — Extract frames locally (avoids CORS issues with client-side uploads)
-        setChatLoadingMsg("Extracting frames from video...");
-        const frames = await extractFrames(file, 8);
-        if (frames.length === 0) throw new Error("No frames could be extracted — is the file a valid video?");
+        // Phase 1 — Server creates a Gemini resumable upload session.
+        // The server reads X-Goog-Upload-URL (CORS-blocked in browsers) and
+        // returns the upload URL in JSON so the client can use it directly.
+        setChatLoadingMsg("Creating upload session...");
+        const sessionRes = await fetch("/api/analyze-upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mimeType: file.type || "video/mp4", filename: file.name, fileSize: file.size }),
+        });
+        const sessionData = await sessionRes.json();
+        if (sessionData.error) throw new Error(sessionData.error);
+        const { uploadUrl } = sessionData;
 
-        // Phase 2 — Send frames to server; Gemini analyses them as inline images
-        setChatLoadingMsg(`Analysing ${frames.length} frames with Gemini...`);
-        const formData = new FormData();
-        formData.append("frames", JSON.stringify(frames));
-        formData.append("description", description);
-        formData.append("profile", JSON.stringify(profile));
-        formData.append("skills", JSON.stringify(skills));
+        // Phase 2 — Browser uploads the full video directly to Gemini.
+        // Bypasses Netlify's 6 MB function body limit for large game footage.
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        setChatLoadingMsg(`Uploading ${sizeMB} MB to Gemini...`);
+        const uploadRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": file.type || "video/mp4",
+            "X-Goog-Upload-Offset": "0",
+            "X-Goog-Upload-Command": "upload, finalize",
+          },
+          body: file,
+        });
+        if (!uploadRes.ok) throw new Error(`Video upload failed (${uploadRes.status})`);
 
-        const analyzeRes = await fetch("/api/analyze", { method: "POST", body: formData });
+        const uploadData = await uploadRes.json();
+        console.log("[chat] Gemini upload response:", uploadData);
+        // Gemini's finalization response is a FLAT object — uri/name are top-level,
+        // NOT nested under "file". Old code used uploadData.file?.uri which was always undefined.
+        const fileUri = uploadData.uri ?? uploadData.file?.uri;
+        const fileName = uploadData.name ?? uploadData.file?.name;
+        if (!fileUri) throw new Error("Gemini did not return a file URI — check the upload response in console");
+
+        // Phase 3 — Server polls until file state is ACTIVE, then runs generateContent
+        setChatLoadingMsg("Video uploaded! Gemini is watching the full video...");
+        const analyzeRes = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description, profile, skills }),
+        });
         const payload = await analyzeRes.json();
         console.log("[chat] /api/analyze response:", payload);
         if (payload.error) throw new Error(payload.error);

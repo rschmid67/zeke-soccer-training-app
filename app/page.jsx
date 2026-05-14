@@ -400,8 +400,8 @@ export default function SoccerApp() {
 
       try {
         // Phase 1 — Server creates a Gemini resumable upload session.
-        // The server reads X-Goog-Upload-URL (CORS-blocked in browsers) and
-        // returns the upload URL in JSON so the client can use it directly.
+        // Server reads the CORS-blocked X-Goog-Upload-URL header and returns
+        // it as JSON so the client knows where to send chunks.
         setChatLoadingMsg("Creating upload session...");
         const sessionRes = await fetch("/api/analyze-upload", {
           method: "POST",
@@ -412,30 +412,35 @@ export default function SoccerApp() {
         if (sessionData.error) throw new Error(sessionData.error);
         const { uploadUrl } = sessionData;
 
-        // Phase 2 — Browser uploads the full video directly to Gemini.
-        // Bypasses Netlify's 6 MB function body limit for large game footage.
-        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-        setChatLoadingMsg(`Uploading ${sizeMB} MB to Gemini...`);
-        const uploadRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type": file.type || "video/mp4",
-            "X-Goog-Upload-Offset": "0",
-            "X-Goog-Upload-Command": "upload, finalize",
-          },
-          body: file,
-        });
-        if (!uploadRes.ok) throw new Error(`Video upload failed (${uploadRes.status})`);
+        // Phase 2 — Upload video in 4 MB chunks through the server.
+        // Direct browser → Gemini PUT is blocked by CORS on the upload endpoint.
+        // Each chunk is well within Netlify's 6 MB function body limit.
+        const CHUNK   = 4 * 1024 * 1024;
+        const sizeMB  = (file.size / 1024 / 1024).toFixed(1);
+        const total   = Math.ceil(file.size / CHUNK);
+        let fileUri, fileName;
 
-        const uploadData = await uploadRes.json();
-        console.log("[chat] Gemini upload response:", uploadData);
-        // Gemini's finalization response is a FLAT object — uri/name are top-level,
-        // NOT nested under "file". Old code used uploadData.file?.uri which was always undefined.
-        const fileUri = uploadData.uri ?? uploadData.file?.uri;
-        const fileName = uploadData.name ?? uploadData.file?.name;
-        if (!fileUri) throw new Error("Gemini did not return a file URI — check the upload response in console");
+        for (let i = 0; i < total; i++) {
+          const start   = i * CHUNK;
+          const isFinal = i === total - 1;
+          setChatLoadingMsg(`Uploading ${sizeMB} MB — ${Math.round((i / total) * 100)}%...`);
 
-        // Phase 3 — Server polls until file state is ACTIVE, then runs generateContent
+          const chunkForm = new FormData();
+          chunkForm.append("chunk",      file.slice(start, Math.min(start + CHUNK, file.size)));
+          chunkForm.append("uploadUrl",  uploadUrl);
+          chunkForm.append("offset",     String(start));
+          chunkForm.append("isFinal",    String(isFinal));
+
+          const chunkRes  = await fetch("/api/upload-chunk", { method: "POST", body: chunkForm });
+          const chunkData = await chunkRes.json();
+          if (chunkData.error) throw new Error(chunkData.error);
+
+          if (isFinal) { fileUri = chunkData.fileUri; fileName = chunkData.fileName; }
+        }
+
+        if (!fileUri) throw new Error("Upload finished but Gemini returned no file URI");
+
+        // Phase 3 — Server polls for ACTIVE then runs generateContent on the full video
         setChatLoadingMsg("Video uploaded! Gemini is watching the full video...");
         const analyzeRes = await fetch("/api/analyze", {
           method: "POST",

@@ -526,10 +526,12 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           messages: apiMessages.slice(firstUserIdx),
         }),
       });
-      const { text, videos } = await res.json();
+      const payload = await res.json();
+      if (payload.error) throw new Error(payload.error);
+      const { text, videos } = payload;
       setChatMessages([...newHistory, { role: "coach", text: text || "Let's keep grinding — you've got this!", videos: videos || [] }]);
-    } catch {
-      setChatMessages([...newHistory, { role: "coach", text: "Connection issue — but remember: Messi never let obstacles stop him either. Keep going!" }]);
+    } catch (err) {
+      setChatMessages([...newHistory, { role: "coach", text: `Error: ${err.message}` }]);
     }
     setChatLoading(false);
   };

@@ -57,6 +57,13 @@ export async function POST(request) {
   });
 
   const data = await res.json();
+  console.log("[chat] Anthropic status:", res.status, "content:", JSON.stringify(data).slice(0, 300));
+
+  if (!res.ok) {
+    const reason = data.error?.message || JSON.stringify(data);
+    return Response.json({ error: `Anthropic API error (${res.status}): ${reason}` }, { status: 500 });
+  }
+
   const text = data.content?.[0]?.text ?? "Let's keep grinding — you've got this!";
 
   const drillNames = extractDrills(text);

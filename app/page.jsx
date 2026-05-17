@@ -256,6 +256,7 @@ export default function SoccerApp() {
   const [calMonth, setCalMonth] = useState(new Date());
   const [videoAnalysis, setVideoAnalysis] = useState(null);
   const [videoLoading, setVideoLoading] = useState(false);
+  const [videoLoadingMsg, setVideoLoadingMsg] = useState("Uploading & analyzing your video...");
   const [uploadedVideo, setUploadedVideo] = useState(null);
   const [pendingVideo, setPendingVideo] = useState(null); // File waiting for player description
   const [chatLoadingMsg, setChatLoadingMsg] = useState("Coach is thinking...");
@@ -541,16 +542,84 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     setVideoLoading(true);
     setVideoAnalysis(null);
 
-    try {
-      const formData = new FormData();
-      if (file) formData.append("video", file);
-      formData.append("profile", JSON.stringify(profile));
-      formData.append("skills", JSON.stringify(skills));
+    // Demo / no-file path
+    if (!file) {
+      try {
+        const formData = new FormData();
+        formData.append("profile", JSON.stringify(profile));
+        formData.append("skills", JSON.stringify(skills));
+        const res = await fetch("/api/analyze", { method: "POST", body: formData });
+        const { text, error } = await res.json();
+        if (error) throw new Error(error);
+        setVideoAnalysis(text);
+      } catch (err) {
+        setVideoAnalysis(`Analysis failed: ${err.message || "Check your connection and try again."}`);
+      }
+      setVideoLoading(false);
+      return;
+    }
 
-      const res = await fetch("/api/analyze", { method: "POST", body: formData });
-      const { text, error } = await res.json();
-      if (error) throw new Error(error);
-      setVideoAnalysis(text);
+    try {
+      // Phase 1 — Create resumable upload session
+      setVideoLoadingMsg("Creating upload session...");
+      const sessionRes  = await fetch("/api/analyze-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mimeType: file.type || "video/mp4", filename: file.name, fileSize: file.size }),
+      });
+      const sessionText = await sessionRes.text();
+      let sessionData;
+      try { sessionData = JSON.parse(sessionText); } catch { throw new Error(`Session non-JSON: ${sessionText.slice(0, 200)}`); }
+      if (sessionData.error) throw new Error(sessionData.error);
+      const { uploadUrl } = sessionData;
+
+      // Phase 2 — Send 8 MB chunks via edge relay
+      const CHUNK  = 8 * 1024 * 1024;
+      const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+      const total  = Math.ceil(file.size / CHUNK);
+      let fileUri, fileName;
+      for (let i = 0; i < total; i++) {
+        const start   = i * CHUNK;
+        const isFinal = i === total - 1;
+        setVideoLoadingMsg(`Uploading ${sizeMB} MB — ${Math.round(((i + 1) / total) * 100)}%...`);
+        const chunkForm = new FormData();
+        chunkForm.append("chunk",     file.slice(start, Math.min(start + CHUNK, file.size)));
+        chunkForm.append("uploadUrl", uploadUrl);
+        chunkForm.append("offset",    String(start));
+        chunkForm.append("isFinal",   String(isFinal));
+        const chunkRes  = await fetch("/upload-relay", { method: "POST", body: chunkForm });
+        const chunkText = await chunkRes.text();
+        let chunkData;
+        try { chunkData = JSON.parse(chunkText); } catch { throw new Error(`Chunk ${i+1}/${total} non-JSON: ${chunkText.slice(0, 200)}`); }
+        if (chunkData.error) throw new Error(`Chunk ${i+1}/${total}: ${chunkData.error}`);
+        if (isFinal) { fileUri = chunkData.fileUri; fileName = chunkData.fileName; }
+      }
+      if (!fileUri) throw new Error("Upload finished but Gemini returned no file URI");
+
+      // Phase 3 — Poll until Gemini finishes processing
+      setVideoLoadingMsg("Video uploaded! Waiting for Gemini to process it...");
+      const pollDeadline = Date.now() + 4 * 60 * 1000;
+      while (Date.now() < pollDeadline) {
+        await new Promise(r => setTimeout(r, 3000));
+        const stRes  = await fetch(`/api/file-status?fileName=${encodeURIComponent(fileName)}`);
+        const stData = await stRes.json();
+        if (stData.state === "ACTIVE") break;
+        if (stData.state === "FAILED") throw new Error("Gemini video processing failed — try a shorter clip");
+      }
+
+      // Phase 4 — Analyze
+      setVideoLoadingMsg("Gemini is watching the full video...");
+      const description = `${profile.name || "the player"}, ${profile.age || 11} years old, ${profile.position || "Attacking Mid"}`;
+      const analyzeRes  = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description, profile, skills }),
+      });
+      const analyzeText = await analyzeRes.text();
+      let payload;
+      try { payload = JSON.parse(analyzeText); } catch { throw new Error(`Analyze non-JSON: ${analyzeText.slice(0, 200)}`); }
+      if (payload.error) throw new Error(payload.error);
+      setVideoAnalysis(payload.text || "Gemini returned an empty response — try a shorter clip");
     } catch (err) {
       setVideoAnalysis(`Analysis failed: ${err.message || "Check your connection and try again."}`);
     }
@@ -841,8 +910,8 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
         {videoLoading && (
           <div className="card" style={{ textAlign: "center", padding: 48 }}>
             <div style={{ fontSize: 40, marginBottom: 16, animation: "spin 1s linear infinite" }}>⚽</div>
-            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, letterSpacing: 2 }}>Uploading & analyzing your video...</div>
-            <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>Gemini is watching the full clip — this may take 30–60 seconds</div>
+            <div style={{ fontFamily: "'Barlow Condensed'", fontSize: 18, letterSpacing: 2 }}>{videoLoadingMsg}</div>
+            <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 6 }}>Large videos may take 2–3 minutes to process</div>
           </div>
         )}
 

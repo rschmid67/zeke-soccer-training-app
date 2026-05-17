@@ -102,7 +102,7 @@ STEP 2 — FULL COACHING ANALYSIS:
 Quote specific timestamps for key moments. Be honest, technical, and direct. Use imperial units throughout.`;
 
     const res = await fetch(
-      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      `${GEMINI_API}/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -228,7 +228,7 @@ Be honest, direct, and technical. Use imperial units throughout.`;
       inlineData: { mimeType: "image/jpeg", data: b64 },
     }));
     const res = await fetch(
-      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      `${GEMINI_API}/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -292,7 +292,7 @@ Give:
 Be direct and technical. Use imperial units throughout.`;
 
     const res = await fetch(
-      `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+      `${GEMINI_API}/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -353,7 +353,7 @@ Be direct and technical. Use imperial units throughout.`;
 
   // Step 3 — Analyse with Gemini 1.5 Pro (native video understanding)
   const analysisRes = await fetch(
-    `${GEMINI_API}/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`,
+    `${GEMINI_API}/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

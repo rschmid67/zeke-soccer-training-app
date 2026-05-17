@@ -111,7 +111,7 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
               { text: prompt },
             ],
           }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
         }),
       }
     );
@@ -232,7 +232,7 @@ Be honest, direct, and technical. Use imperial units throughout.`;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [...imageParts, { text: framesPrompt }] }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+          generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
         }),
       }
     );
@@ -362,7 +362,7 @@ Be direct and technical. Use imperial units throughout.`;
             { text: `Watch the full video. Quote specific timestamps where possible.\n\n${coachingPrompt}` },
           ],
         }],
-        generationConfig: { maxOutputTokens: 2048, temperature: 0.4 },
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
       }),
     }
   );

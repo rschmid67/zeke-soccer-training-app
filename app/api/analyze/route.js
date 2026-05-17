@@ -1,10 +1,10 @@
-// Allow up to 60 s — Gemini video upload + processing + inference
-export const maxDuration = 60;
+// Allow up to 300 s — large videos can take 2-3 min to become ACTIVE in Gemini
+export const maxDuration = 300;
 
 const GEMINI_API = "https://generativelanguage.googleapis.com";
 
 // Poll until the uploaded file is ACTIVE (ready for inference)
-async function waitForActive(fileName, apiKey, maxMs = 45_000) {
+async function waitForActive(fileName, apiKey, maxMs = 240_000) {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
     const res = await fetch(
@@ -28,6 +28,7 @@ export async function POST(request) {
   // ── JSON body — post-upload analysis (Coach AI Gemini File API flow) ─────
   const contentType = request.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
+  try {
     const { fileUri, fileName, mimeType: fileMime, description, profile, skills } = await request.json();
 
     const skillSummary = Object.entries(skills || {})
@@ -137,6 +138,9 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
     fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
 
     return Response.json({ text });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
   }
 
   // ── FormData body — Video Analysis tab or frames from chat ────────────────

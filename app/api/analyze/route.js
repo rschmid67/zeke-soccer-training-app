@@ -35,8 +35,6 @@ export async function POST(request) {
       .map(([k, v]) => `${k}: ${v}/100`)
       .join(", ");
 
-    await waitForActive(fileName, API_KEY);
-
     const prompt =
 `You are an elite youth soccer development coach conducting a video performance review.
 

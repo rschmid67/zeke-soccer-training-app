@@ -448,7 +448,18 @@ export default function SoccerApp() {
 
         if (!fileUri) throw new Error("Upload finished but Gemini returned no file URI");
 
-        // Phase 3 — Server polls for ACTIVE then runs generateContent on the full video
+        // Phase 3 — Poll until Gemini finishes processing the video (client-side to avoid gateway timeout)
+        setChatLoadingMsg("Video uploaded! Waiting for Gemini to process it...");
+        const pollDeadline = Date.now() + 4 * 60 * 1000; // 4 minutes
+        while (Date.now() < pollDeadline) {
+          await new Promise(r => setTimeout(r, 3000));
+          const stRes   = await fetch(`/api/file-status?fileName=${encodeURIComponent(fileName)}`);
+          const stData  = await stRes.json();
+          if (stData.state === "ACTIVE") break;
+          if (stData.state === "FAILED") throw new Error("Gemini video processing failed — try a shorter clip");
+        }
+
+        // Phase 4 — Send to Gemini for analysis (file is now ACTIVE)
         setChatLoadingMsg("Video uploaded! Gemini is watching the full video...");
         const analyzeRes  = await fetch("/api/analyze", {
           method: "POST",

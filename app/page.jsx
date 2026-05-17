@@ -258,7 +258,9 @@ export default function SoccerApp() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoLoadingMsg, setVideoLoadingMsg] = useState("Uploading & analyzing your video...");
   const [uploadedVideo, setUploadedVideo] = useState(null);
-  const [pendingVideo, setPendingVideo] = useState(null); // File waiting for player description
+  const [pendingVideo, setPendingVideo] = useState(null); // File waiting for player description (Coach AI tab)
+  const [pendingVideoFile, setPendingVideoFile] = useState(null); // File waiting for description (Video Analysis tab)
+  const [videoDescription, setVideoDescription] = useState("");
   const [chatLoadingMsg, setChatLoadingMsg] = useState("Coach is thinking...");
   const fileRef = useRef();
   const chatFileRef = useRef();
@@ -538,7 +540,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
   };
 
   // ── Video Analysis ────────────────────────────────────────────────────────
-  const analyzeVideo = async (file) => {
+  const analyzeVideo = async (file, description = "") => {
     setVideoLoading(true);
     setVideoAnalysis(null);
 
@@ -609,11 +611,11 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
 
       // Phase 4 — Analyze
       setVideoLoadingMsg("Gemini is watching the full video...");
-      const description = `${profile.name || "the player"}, ${profile.age || 11} years old, ${profile.position || "Attacking Mid"}`;
+      const finalDescription = description || `${profile.name || "the player"}, ${profile.age || 11} years old, ${profile.position || "Attacking Mid"}`;
       const analyzeRes  = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description, profile, skills }),
+        body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description: finalDescription, profile, skills }),
       });
       const analyzeText = await analyzeRes.text();
       let payload;
@@ -876,7 +878,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
             <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={e => {
               const f = e.target.files[0];
-              if (f) { setUploadedVideo(f.name); analyzeVideo(f); }
+              if (f) { setUploadedVideo(f.name); setPendingVideoFile(f); setVideoDescription(""); setVideoAnalysis(null); }
             }} />
             <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
               <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>📤 Upload Video</button>
@@ -905,6 +907,67 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
           </div>
         </div>
+
+        {/* Player identification form — shown after video is selected, before analysis starts */}
+        {pendingVideoFile && !videoLoading && (
+          <div className="card">
+            <div className="card-title" style={{ marginBottom: 6 }}>Identify the Player</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14 }}>
+              Help Gemini find {profile.name || "your player"} in the video before the analysis begins.
+            </div>
+            <div className="form-group">
+              <label className="form-label">Jersey color & number</label>
+              <input
+                className="form-input"
+                placeholder="e.g. White #13"
+                value={videoDescription}
+                onChange={e => setVideoDescription(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cleat color / other details</label>
+              <input
+                className="form-input"
+                placeholder="e.g. Blue cleats, tallest player on the left"
+                value={videoDescription.split("|")[1] || ""}
+                onChange={e => setVideoDescription(prev => prev.split("|")[0] + "|" + e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Footage type</label>
+              <select
+                className="form-input"
+                value={videoDescription.split("|")[2] || ""}
+                onChange={e => setVideoDescription(prev => { const p = prev.split("|"); p[2] = e.target.value; return p.join("|"); })}
+              >
+                <option value="">Select...</option>
+                <option value="game footage">Game footage</option>
+                <option value="training / solo practice">Training / solo practice</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+              <button className="btn btn-primary" onClick={() => {
+                const parts = videoDescription.split("|");
+                const jersey = parts[0]?.trim();
+                const details = parts[1]?.trim();
+                const footage = parts[2]?.trim();
+                const desc = [
+                  jersey && `Jersey: ${jersey}`,
+                  details && details,
+                  footage && footage,
+                  `Name: ${profile.name || "Zeke"}, Age: ${profile.age || 11}, Position: ${profile.position || "Attacking Mid"}`,
+                ].filter(Boolean).join(". ");
+                setPendingVideoFile(null);
+                analyzeVideo(pendingVideoFile, desc);
+              }}>
+                Start Analysis
+              </button>
+              <button className="btn btn-secondary" onClick={() => { setPendingVideoFile(null); setUploadedVideo(null); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Analysis Results */}
         {videoLoading && (

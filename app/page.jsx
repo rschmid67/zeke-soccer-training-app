@@ -403,21 +403,25 @@ export default function SoccerApp() {
         // Server reads the CORS-blocked X-Goog-Upload-URL header and returns
         // it as JSON so the client knows where to send chunks.
         setChatLoadingMsg("Creating upload session...");
-        const sessionRes = await fetch("/api/analyze-upload", {
+        const sessionRes  = await fetch("/api/analyze-upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mimeType: file.type || "video/mp4", filename: file.name, fileSize: file.size }),
         });
-        const sessionData = await sessionRes.json();
-        if (sessionData.error) throw new Error(sessionData.error);
+        const sessionText = await sessionRes.text();
+        console.log("[chat] /api/analyze-upload raw:", sessionRes.status, sessionText.slice(0, 300));
+        let sessionData;
+        try { sessionData = JSON.parse(sessionText); }
+        catch { throw new Error(`Session init failed (HTTP ${sessionRes.status}): ${sessionText.slice(0, 200)}`); }
+        if (sessionData.error) throw new Error(`Session: ${sessionData.error}`);
         const { uploadUrl } = sessionData;
 
-        // Phase 2 — Upload video in 4 MB chunks through the server.
-        // Direct browser → Gemini PUT is blocked by CORS on the upload endpoint.
-        // Each chunk is well within Netlify's 6 MB function body limit.
-        const CHUNK   = 8 * 1024 * 1024; // Gemini requires multiples of 8 MB for non-final chunks
-        const sizeMB  = (file.size / 1024 / 1024).toFixed(1);
-        const total   = Math.ceil(file.size / CHUNK);
+        // Phase 2 — Relay video chunks through /upload-relay (Netlify Edge Function,
+        // 50 MB body limit). Path is outside /api/ to avoid Next.js route conflicts.
+        // Gemini requires 8 MB chunk granularity for non-final chunks.
+        const CHUNK  = 8 * 1024 * 1024;
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        const total  = Math.ceil(file.size / CHUNK);
         let fileUri, fileName;
 
         for (let i = 0; i < total; i++) {
@@ -431,9 +435,13 @@ export default function SoccerApp() {
           chunkForm.append("offset",     String(start));
           chunkForm.append("isFinal",    String(isFinal));
 
-          const chunkRes  = await fetch("/api/upload-chunk", { method: "POST", body: chunkForm });
-          const chunkData = await chunkRes.json();
-          if (chunkData.error) throw new Error(chunkData.error);
+          const chunkRes  = await fetch("/upload-relay", { method: "POST", body: chunkForm });
+          const chunkText = await chunkRes.text();
+          console.log(`[chat] /upload-relay chunk ${i+1}/${total} raw:`, chunkRes.status, chunkText.slice(0, 300));
+          let chunkData;
+          try { chunkData = JSON.parse(chunkText); }
+          catch { throw new Error(`Chunk ${i+1}/${total} non-JSON (HTTP ${chunkRes.status}): ${chunkText.slice(0, 200)}`); }
+          if (chunkData.error) throw new Error(`Chunk ${i+1}/${total}: ${chunkData.error}`);
 
           if (isFinal) { fileUri = chunkData.fileUri; fileName = chunkData.fileName; }
         }
@@ -442,13 +450,16 @@ export default function SoccerApp() {
 
         // Phase 3 — Server polls for ACTIVE then runs generateContent on the full video
         setChatLoadingMsg("Video uploaded! Gemini is watching the full video...");
-        const analyzeRes = await fetch("/api/analyze", {
+        const analyzeRes  = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description, profile, skills }),
         });
-        const payload = await analyzeRes.json();
-        console.log("[chat] /api/analyze response:", payload);
+        const analyzeText = await analyzeRes.text();
+        console.log("[chat] /api/analyze raw:", analyzeRes.status, analyzeText.slice(0, 300));
+        let payload;
+        try { payload = JSON.parse(analyzeText); }
+        catch { throw new Error(`Analyze step non-JSON (HTTP ${analyzeRes.status}): ${analyzeText.slice(0, 200)}`); }
         if (payload.error) throw new Error(payload.error);
         if (!payload.text) throw new Error("Gemini returned an empty response — try a shorter clip");
 

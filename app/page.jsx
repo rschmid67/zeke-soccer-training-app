@@ -260,7 +260,9 @@ export default function SoccerApp() {
   const [uploadedVideo, setUploadedVideo] = useState(null);
   const [pendingVideo, setPendingVideo] = useState(null); // File waiting for player description (Coach AI tab)
   const [pendingVideoFile, setPendingVideoFile] = useState(null); // File waiting for description (Video Analysis tab)
-  const [videoDescription, setVideoDescription] = useState("");
+  const [videoDescJersey, setVideoDescJersey] = useState("");
+  const [videoDescDetails, setVideoDescDetails] = useState("");
+  const [videoDescFootage, setVideoDescFootage] = useState("");
   const [chatLoadingMsg, setChatLoadingMsg] = useState("Coach is thinking...");
   const fileRef = useRef();
   const chatFileRef = useRef();
@@ -878,7 +880,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
             <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={e => {
               const f = e.target.files[0];
-              if (f) { setUploadedVideo(f.name); setPendingVideoFile(f); setVideoDescription(""); setVideoAnalysis(null); }
+              if (f) { setUploadedVideo(f.name); setPendingVideoFile(f); setVideoDescJersey(""); setVideoDescDetails(""); setVideoDescFootage(""); setVideoAnalysis(null); }
             }} />
             <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
               <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>📤 Upload Video</button>
@@ -920,8 +922,8 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
               <input
                 className="form-input"
                 placeholder="e.g. White #13"
-                value={videoDescription}
-                onChange={e => setVideoDescription(e.target.value)}
+                value={videoDescJersey}
+                onChange={e => setVideoDescJersey(e.target.value)}
               />
             </div>
             <div className="form-group">
@@ -929,16 +931,16 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
               <input
                 className="form-input"
                 placeholder="e.g. Blue cleats, tallest player on the left"
-                value={videoDescription.split("|")[1] || ""}
-                onChange={e => setVideoDescription(prev => prev.split("|")[0] + "|" + e.target.value)}
+                value={videoDescDetails}
+                onChange={e => setVideoDescDetails(e.target.value)}
               />
             </div>
             <div className="form-group">
               <label className="form-label">Footage type</label>
               <select
                 className="form-input"
-                value={videoDescription.split("|")[2] || ""}
-                onChange={e => setVideoDescription(prev => { const p = prev.split("|"); p[2] = e.target.value; return p.join("|"); })}
+                value={videoDescFootage}
+                onChange={e => setVideoDescFootage(e.target.value)}
               >
                 <option value="">Select...</option>
                 <option value="game footage">Game footage</option>
@@ -947,18 +949,15 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
               <button className="btn btn-primary" onClick={() => {
-                const parts = videoDescription.split("|");
-                const jersey = parts[0]?.trim();
-                const details = parts[1]?.trim();
-                const footage = parts[2]?.trim();
                 const desc = [
-                  jersey && `Jersey: ${jersey}`,
-                  details && details,
-                  footage && footage,
+                  videoDescJersey && `Jersey: ${videoDescJersey}`,
+                  videoDescDetails,
+                  videoDescFootage,
                   `Name: ${profile.name || "Zeke"}, Age: ${profile.age || 11}, Position: ${profile.position || "Attacking Mid"}`,
                 ].filter(Boolean).join(". ");
+                const file = pendingVideoFile;
                 setPendingVideoFile(null);
-                analyzeVideo(pendingVideoFile, desc);
+                analyzeVideo(file, desc);
               }}>
                 Start Analysis
               </button>

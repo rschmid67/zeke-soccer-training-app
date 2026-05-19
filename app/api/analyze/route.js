@@ -99,7 +99,11 @@ STEP 2 — FULL COACHING ANALYSIS:
 
 Quote specific timestamps for key moments. Be honest, technical, and direct. Use imperial units throughout.`;
 
-    const res = await fetch(
+    // Kick off the Gemini request WITHOUT awaiting it so we can return the
+    // streaming Response immediately. Keep-alive bytes flow to the client
+    // right away, preventing Netlify's gateway from timing out while Gemini
+    // thinks (which can take 30–60 s for large videos).
+    const geminiPromise = fetch(
       `${GEMINI_API}/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${API_KEY}`,
       {
         method: "POST",
@@ -111,34 +115,38 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
               { text: prompt },
             ],
           }],
-          generationConfig: { maxOutputTokens: 8192, temperature: 0.4 },
+          generationConfig: {
+            maxOutputTokens: 8192,
+            temperature: 0.4,
+            thinkingConfig: { thinkingBudget: 0 }, // disable slow thinking phase
+          },
         }),
       }
     );
 
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Gemini analysis failed (${res.status}): ${err}`);
-    }
-
-    // Stream SSE tokens from Gemini straight to the client as plain text.
-    // Keep-alive spaces are sent every 5 s so the Netlify CDN doesn't time
-    // out during Gemini's "thinking" phase before the first token arrives.
     const encoder = new TextEncoder();
-    const geminiReader = res.body.getReader();
     const decoder = new TextDecoder();
 
     const stream = new ReadableStream({
       async start(controller) {
-        // Send an immediate byte so the CDN knows the stream is alive.
+        // Send keep-alive bytes IMMEDIATELY so the CDN sees an active stream
+        // before Gemini has even started responding.
         controller.enqueue(encoder.encode(" "));
         const keepAlive = setInterval(() => {
           try { controller.enqueue(encoder.encode(" ")); } catch {}
-        }, 5000);
+        }, 4000);
 
-        let buffer = "";
         let hasContent = false;
         try {
+          const res = await geminiPromise;
+          if (!res.ok) {
+            const err = await res.text();
+            controller.enqueue(encoder.encode(`ERROR:Gemini failed (${res.status}): ${err.slice(0, 300)}`));
+            return;
+          }
+
+          const geminiReader = res.body.getReader();
+          let buffer = "";
           while (true) {
             const { done, value } = await geminiReader.read();
             if (done) break;
@@ -163,9 +171,9 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
           controller.enqueue(encoder.encode(`ERROR:${err.message}`));
         } finally {
           clearInterval(keepAlive);
+          fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
+          controller.close();
         }
-        fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
-        controller.close();
       },
     });
 

@@ -546,6 +546,7 @@ export default function SoccerApp() {
           if (done) break;
           analysisText += dec.decode(value, { stream: true });
         }
+        analysisText = analysisText.trim();
         if (analysisText.startsWith("ERROR:")) throw new Error(analysisText.slice(6));
         if (!analysisText) throw new Error("Gemini returned an empty response — try a shorter clip");
 
@@ -703,6 +704,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
         if (done) break;
         analysisText += dec.decode(value, { stream: true });
       }
+      analysisText = analysisText.trim();
       if (analysisText.startsWith("ERROR:")) throw new Error(analysisText.slice(6));
       setVideoAnalysis(analysisText || "Gemini returned an empty response — try a shorter clip");
     } catch (err) {

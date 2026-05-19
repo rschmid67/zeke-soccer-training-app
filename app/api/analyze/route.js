@@ -122,13 +122,20 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
     }
 
     // Stream SSE tokens from Gemini straight to the client as plain text.
-    // This prevents Netlify inactivity timeouts (data flows immediately).
+    // Keep-alive spaces are sent every 5 s so the Netlify CDN doesn't time
+    // out during Gemini's "thinking" phase before the first token arrives.
     const encoder = new TextEncoder();
     const geminiReader = res.body.getReader();
     const decoder = new TextDecoder();
 
     const stream = new ReadableStream({
       async start(controller) {
+        // Send an immediate byte so the CDN knows the stream is alive.
+        controller.enqueue(encoder.encode(" "));
+        const keepAlive = setInterval(() => {
+          try { controller.enqueue(encoder.encode(" ")); } catch {}
+        }, 5000);
+
         let buffer = "";
         let hasContent = false;
         try {
@@ -154,6 +161,8 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
           if (!hasContent) controller.enqueue(encoder.encode("ERROR:Gemini returned no analysis text"));
         } catch (err) {
           controller.enqueue(encoder.encode(`ERROR:${err.message}`));
+        } finally {
+          clearInterval(keepAlive);
         }
         fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
         controller.close();

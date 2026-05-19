@@ -44,6 +44,7 @@ const CHAT_INIT = [
 
 const DEFAULT_PROFILE = {
   name: "Zeke Schmid", age: "11", position: "Attacking Mid",
+  jerseyNumber: "",
   height: "", weight: "",
   goal: "Make the U15 CONCACAF Cup team in 2029",
   targetYear: 2029,
@@ -580,7 +581,7 @@ export default function SoccerApp() {
     const recentSessions = sessions.slice(-3).map(s => `${s.date} ${s.type} (${s.duration}min, score ${s.score})`).join("; ");
 
     const systemPrompt = `You are Coach AI — a passionate, motivating soccer coach persona blending the wisdom of Pep Guardiola with the personal experience of training players like Messi and Beckham. You speak with authority, warmth, and urgency. You know your player's profile:
-Name: ${profile.name}, Age: ${profile.age}, Position: ${profile.position}
+Name: ${profile.name}${profile.jerseyNumber ? ` #${profile.jerseyNumber}` : ""}, Age: ${profile.age}, Position: ${profile.position}
 Goal: ${profile.goal}
 Current skill scores — ${skillSummary}
 Recent sessions: ${recentSessions}
@@ -761,7 +762,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
         <div className="hero-banner">
           <div>
             <div style={{ fontSize: 11, letterSpacing: 3, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase" }}>Welcome back,</div>
-            <div className="hero-name">{profile.name}</div>
+            <div className="hero-name">{profile.name}{profile.jerseyNumber ? ` #${profile.jerseyNumber}` : ""}</div>
             <div className="hero-goal">🎯 {profile.goal}</div>
             <div className="hero-idols">
               {profile.idols.map(idol => (
@@ -1397,7 +1398,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
           <div className="card">
             <div className="card-title">My Player CV</div>
             <div style={{ background: "var(--pitch3)", borderRadius: 10, padding: 18, marginBottom: 14 }}>
-              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, color: "var(--grass2)", letterSpacing: 2 }}>{profile.name}</div>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, color: "var(--grass2)", letterSpacing: 2 }}>{profile.name}{profile.jerseyNumber ? ` #${profile.jerseyNumber}` : ""}</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Age {profile.age} · {profile.position} · {profile.club}</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px", fontSize: 12, marginBottom: 10 }}>
                 <span>📏 Height: {profile.height}</span>
@@ -1579,6 +1580,7 @@ Sent via My Path — Zeke's Soccer Training App`;
     const [skillForm, setSkillForm] = useState({ ...skills });
     const fields = [
       { key: "name", label: "Full Name" },
+      { key: "jerseyNumber", label: "Jersey Number" },
       { key: "age", label: "Age" },
       { key: "position", label: "Position" },
       { key: "height", label: "Height (ft/in)" },
@@ -1595,7 +1597,7 @@ Sent via My Path — Zeke's Soccer Training App`;
           <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 24 }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg, var(--grass), var(--accent))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>⚽</div>
             <div>
-              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: "var(--white)", letterSpacing: 2 }}>{profile.name || "Your Name"}</div>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: "var(--white)", letterSpacing: 2 }}>{profile.name || "Your Name"}{profile.jerseyNumber ? ` #${profile.jerseyNumber}` : ""}</div>
               <div style={{ fontSize: 12, color: "var(--muted)" }}>{profile.position || "Position"} · Age {profile.age || "?"} · {profile.club || "Club"}</div>
             </div>
           </div>
@@ -1734,7 +1736,7 @@ Sent via My Path — Zeke's Soccer Training App`;
           ))}
         </div>
         <div style={{ padding: "14px 18px", borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--muted)" }}>
-          <div style={{ fontWeight: 700, color: "var(--white)", fontSize: 13 }}>{profile.name || "My Profile"}</div>
+          <div style={{ fontWeight: 700, color: "var(--white)", fontSize: 13 }}>{profile.name || "My Profile"}{profile.jerseyNumber ? ` #${profile.jerseyNumber}` : ""}</div>
           <div>{profile.club || <span style={{ opacity: 0.5 }}>{userId}</span>}</div>
           <div style={{ marginTop: 4 }}><span className="badge badge-green" style={{ fontSize: 9 }}>🎯 {daysToGoal}d to goal</span></div>
           <button

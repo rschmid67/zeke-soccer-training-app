@@ -129,8 +129,23 @@ function LineChart({ data, color = "#00e676", width = 320, height = 80 }) {
 }
 
 // ── Chat Page (top-level so React never unmounts it on re-render) ─────────────
-function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoadingMsg, sendChat, fileRef }) {
+function fmtDate(ts) {
+  if (!ts) return null;
+  const d = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+}
+function fmtTime(ts) {
+  if (!ts) return null;
+  return new Date(ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoadingMsg, sendChat, fileRef, onClearHistory }) {
   const bottomRef = useRef();
+  const [confirmClear, setConfirmClear] = React.useState(false);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
   return (
@@ -143,35 +158,58 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoad
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           <button className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()}>📹 Attach Video</button>
+          {confirmClear
+            ? <>
+                <button className="btn btn-sm" style={{ background: "#c0392b", color: "#fff", border: "none" }} onClick={() => { onClearHistory(); setConfirmClear(false); }}>Confirm Clear</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setConfirmClear(false)}>Cancel</button>
+              </>
+            : <button className="btn btn-secondary btn-sm" onClick={() => setConfirmClear(true)}>🗑 New Chat</button>
+          }
         </div>
       </div>
 
       <div className="card">
         <div className="chat-container">
           <div className="chat-messages">
-            {chatMessages.map((m, i) => (
-              <div key={i} className={`chat-msg ${m.role}`}>
-                <div className={`chat-avatar ${m.role}`}>{m.role === "coach" ? "🧑‍🏫" : "⚽"}</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: "75%" }}>
-                  <div className={`chat-bubble ${m.role}`}>{m.text}</div>
-                  {m.role === "coach" && m.videos?.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      {m.videos.map((v, vi) => (
-                        <a key={vi} href={v.url} target="_blank" rel="noopener noreferrer" style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          background: "rgba(255,30,30,0.12)", border: "1px solid rgba(255,80,80,0.3)",
-                          borderRadius: 8, padding: "7px 12px", textDecoration: "none",
-                          color: "var(--white)", fontSize: 12, fontWeight: 600,
-                        }}>
-                          <span style={{ color: "#ff4444", fontSize: 14 }}>▶</span>
-                          <span>Watch: {v.name}</span>
-                        </a>
-                      ))}
+            {chatMessages.map((m, i) => {
+              const prev = chatMessages[i - 1];
+              const showDateSep = m.ts && fmtDate(m.ts) !== fmtDate(prev?.ts);
+              return (
+                <React.Fragment key={i}>
+                  {showDateSep && (
+                    <div style={{ textAlign: "center", margin: "12px 0 6px", fontSize: 11, color: "var(--muted)", fontWeight: 600, letterSpacing: 1 }}>
+                      — {fmtDate(m.ts)} —
                     </div>
                   )}
-                </div>
-              </div>
-            ))}
+                  <div className={`chat-msg ${m.role}`}>
+                    <div className={`chat-avatar ${m.role}`}>{m.role === "coach" ? "🧑‍🏫" : "⚽"}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: "75%" }}>
+                      <div className={`chat-bubble ${m.role}`}>{m.text}</div>
+                      {m.role === "coach" && m.videos?.length > 0 && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {m.videos.map((v, vi) => (
+                            <a key={vi} href={v.url} target="_blank" rel="noopener noreferrer" style={{
+                              display: "flex", alignItems: "center", gap: 8,
+                              background: "rgba(255,30,30,0.12)", border: "1px solid rgba(255,80,80,0.3)",
+                              borderRadius: 8, padding: "7px 12px", textDecoration: "none",
+                              color: "var(--white)", fontSize: 12, fontWeight: 600,
+                            }}>
+                              <span style={{ color: "#ff4444", fontSize: 14 }}>▶</span>
+                              <span>Watch: {v.name}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {m.ts && (
+                        <div style={{ fontSize: 10, color: "var(--muted)", alignSelf: m.role === "user" ? "flex-end" : "flex-start" }}>
+                          {fmtTime(m.ts)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </React.Fragment>
+              );
+            })}
             {chatLoading && (
               <div className="chat-msg">
                 <div className="chat-avatar coach">🧑‍🏫</div>
@@ -379,6 +417,31 @@ export default function SoccerApp() {
   useEffect(() => { localStorage.setItem("zeke_skills", JSON.stringify(skills)); }, [skills]);
   useEffect(() => { localStorage.setItem("zeke_sessions", JSON.stringify(sessions)); }, [sessions]);
 
+  // ── Chat history persistence ───────────────────────────────────────────────
+  useEffect(() => {
+    const saved = localStorage.getItem("zeke_chat_history");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) setChatMessages(parsed);
+      } catch {}
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Don't overwrite with just the initial greeting
+    if (chatMessages.length > 1 || chatMessages[0]?.ts) {
+      localStorage.setItem("zeke_chat_history", JSON.stringify(chatMessages));
+    }
+  }, [chatMessages]);
+
+  const clearChatHistory = () => {
+    const init = [{ ...CHAT_INIT[0], ts: Date.now() }];
+    setChatMessages(init);
+    localStorage.removeItem("zeke_chat_history");
+  };
+
   const notify = (msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
@@ -399,7 +462,7 @@ export default function SoccerApp() {
       const file = pendingVideo;
       setPendingVideo(null);
 
-      setChatMessages(prev => [...prev, { role: "user", text: description }]);
+      setChatMessages(prev => [...prev, { role: "user", text: description, ts: Date.now() }]);
       setChatInput("");
       setChatLoading(true);
 
@@ -483,11 +546,13 @@ export default function SoccerApp() {
           role: "coach",
           text: payload.text,
           videos: [],
+          ts: Date.now(),
         }]);
       } catch (err) {
         setChatMessages(prev => [...prev, {
           role: "coach",
           text: `Video analysis failed: ${err.message || "check your connection and try again."}`,
+          ts: Date.now(),
         }]);
       }
 
@@ -497,7 +562,7 @@ export default function SoccerApp() {
     }
 
     // ── Normal Claude chat ────────────────────────────────────────────────────
-    const userMsg = { role: "user", text: msg };
+    const userMsg = { role: "user", text: msg, ts: Date.now() };
     const newHistory = [...chatMessages, userMsg];
     setChatMessages(newHistory);
     setChatInput("");
@@ -534,9 +599,9 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
       const payload = await res.json();
       if (payload.error) throw new Error(payload.error);
       const { text, videos } = payload;
-      setChatMessages([...newHistory, { role: "coach", text: text || "Let's keep grinding — you've got this!", videos: videos || [] }]);
+      setChatMessages([...newHistory, { role: "coach", text: text || "Let's keep grinding — you've got this!", videos: videos || [], ts: Date.now() }]);
     } catch (err) {
-      setChatMessages([...newHistory, { role: "coach", text: `Error: ${err.message}` }]);
+      setChatMessages([...newHistory, { role: "coach", text: `Error: ${err.message}`, ts: Date.now() }]);
     }
     setChatLoading(false);
   };
@@ -635,11 +700,13 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
     if (!file) return;
     setPendingVideo(file);
     const playerName = profile.name || "Zeke";
+    const now = Date.now();
     setChatMessages(prev => [...prev,
-      { role: "user", text: `📹 Uploaded: ${file.name}` },
+      { role: "user", text: `📹 Uploaded: ${file.name}`, ts: now },
       {
         role: "coach",
         text: `Got the video! Before I start the analysis, help me find ${playerName}.\n\nWhat jersey color and number is he wearing? Any other standout details (bright cleats, hair, height)?\n\nAlso: is this game footage or a training/solo session? Type your answer and hit Send.`,
+        ts: now,
       },
     ]);
   };
@@ -1613,7 +1680,7 @@ Sent via My Path — Zeke's Soccer Training App`;
     progress: { title: "My Progress", sub: "Skill development vs CONCACAF target", comp: <ProgressPage /> },
     calendar: { title: "Calendar", sub: "View & schedule all training sessions", comp: <CalendarPage /> },
     plan: { title: "Training Plan", sub: "AI-personalized path to your goals", comp: <PlanPage /> },
-    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} chatLoadingMsg={chatLoadingMsg} sendChat={sendChat} fileRef={chatFileRef} /> },
+    chat: { title: "Coach AI", sub: "Your personal AI coaching assistant", comp: <ChatPage chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} chatLoading={chatLoading} chatLoadingMsg={chatLoadingMsg} sendChat={sendChat} fileRef={chatFileRef} onClearHistory={clearChatHistory} /> },
     highlights: { title: "Highlights & CV", sub: "Create and share your player profile", comp: <HighlightsPage /> },
     share: { title: "Share & Export", sub: "Send reports and highlights to coaches & scouts", comp: <SharePage /> },
     settings: { title: "My Profile", sub: "Update your details, goals & preferences", comp: <SettingsPage /> },

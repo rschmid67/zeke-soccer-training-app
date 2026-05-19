@@ -534,17 +534,24 @@ export default function SoccerApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description, profile, skills }),
         });
-        const analyzeText = await analyzeRes.text();
-        console.log("[chat] /api/analyze raw:", analyzeRes.status, analyzeText.slice(0, 300));
-        let payload;
-        try { payload = JSON.parse(analyzeText); }
-        catch { throw new Error(`Analyze step non-JSON (HTTP ${analyzeRes.status}): ${analyzeText.slice(0, 200)}`); }
-        if (payload.error) throw new Error(payload.error);
-        if (!payload.text) throw new Error("Gemini returned an empty response — try a shorter clip");
+        if (!analyzeRes.ok) {
+          const errText = await analyzeRes.text();
+          throw new Error(`Analyze failed (${analyzeRes.status}): ${errText.slice(0, 200)}`);
+        }
+        const reader = analyzeRes.body.getReader();
+        const dec = new TextDecoder();
+        let analysisText = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          analysisText += dec.decode(value, { stream: true });
+        }
+        if (analysisText.startsWith("ERROR:")) throw new Error(analysisText.slice(6));
+        if (!analysisText) throw new Error("Gemini returned an empty response — try a shorter clip");
 
         setChatMessages(prev => [...prev, {
           role: "coach",
-          text: payload.text,
+          text: analysisText,
           videos: [],
           ts: Date.now(),
         }]);
@@ -684,11 +691,20 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileUri, fileName, mimeType: file.type || "video/mp4", description: finalDescription, profile, skills }),
       });
-      const analyzeText = await analyzeRes.text();
-      let payload;
-      try { payload = JSON.parse(analyzeText); } catch { throw new Error(`Analyze non-JSON: ${analyzeText.slice(0, 200)}`); }
-      if (payload.error) throw new Error(payload.error);
-      setVideoAnalysis(payload.text || "Gemini returned an empty response — try a shorter clip");
+      if (!analyzeRes.ok) {
+        const errText = await analyzeRes.text();
+        throw new Error(`Analyze failed (${analyzeRes.status}): ${errText.slice(0, 200)}`);
+      }
+      const reader = analyzeRes.body.getReader();
+      const dec = new TextDecoder();
+      let analysisText = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        analysisText += dec.decode(value, { stream: true });
+      }
+      if (analysisText.startsWith("ERROR:")) throw new Error(analysisText.slice(6));
+      setVideoAnalysis(analysisText || "Gemini returned an empty response — try a shorter clip");
     } catch (err) {
       setVideoAnalysis(`Analysis failed: ${err.message || "Check your connection and try again."}`);
     }

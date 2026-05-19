@@ -100,7 +100,7 @@ STEP 2 — FULL COACHING ANALYSIS:
 Quote specific timestamps for key moments. Be honest, technical, and direct. Use imperial units throughout.`;
 
     const res = await fetch(
-      `${GEMINI_API}/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`,
+      `${GEMINI_API}/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -121,21 +121,46 @@ Quote specific timestamps for key moments. Be honest, technical, and direct. Use
       throw new Error(`Gemini analysis failed (${res.status}): ${err}`);
     }
 
-    const data = await res.json();
-    console.log("[analyze] JSON body flow — Gemini raw response:", JSON.stringify(data).slice(0, 500));
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      const finishReason = data.candidates?.[0]?.finishReason;
-      const reason = data.error?.message
-        || (finishReason && finishReason !== "STOP" ? `Finish reason: ${finishReason}` : null)
-        || data.promptFeedback?.blockReason
-        || JSON.stringify(data).slice(0, 300);
-      return Response.json({ error: `Gemini returned no analysis text: ${reason}` }, { status: 500 });
-    }
+    // Stream SSE tokens from Gemini straight to the client as plain text.
+    // This prevents Netlify inactivity timeouts (data flows immediately).
+    const encoder = new TextEncoder();
+    const geminiReader = res.body.getReader();
+    const decoder = new TextDecoder();
 
-    fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
+    const stream = new ReadableStream({
+      async start(controller) {
+        let buffer = "";
+        let hasContent = false;
+        try {
+          while (true) {
+            const { done, value } = await geminiReader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const chunk = JSON.parse(line.slice(6));
+                const part = chunk.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (part) { hasContent = true; controller.enqueue(encoder.encode(part)); }
+                const reason = chunk.candidates?.[0]?.finishReason;
+                if (reason && reason !== "STOP" && !hasContent) {
+                  controller.enqueue(encoder.encode(`ERROR:Gemini finish reason: ${reason}`));
+                }
+              } catch {}
+            }
+          }
+          if (!hasContent) controller.enqueue(encoder.encode("ERROR:Gemini returned no analysis text"));
+        } catch (err) {
+          controller.enqueue(encoder.encode(`ERROR:${err.message}`));
+        }
+        fetch(`${GEMINI_API}/v1beta/${fileName}?key=${API_KEY}`, { method: "DELETE" }).catch(() => {});
+        controller.close();
+      },
+    });
 
-    return Response.json({ text });
+    return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 });
   }

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 
 // ── Static data ──────────────────────────────────────────────────────────────
 const SKILLS = [
@@ -145,7 +145,7 @@ function fmtTime(ts) {
 
 function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoadingMsg, sendChat, fileRef, onClearHistory }) {
   const bottomRef = useRef();
-  const [confirmClear, setConfirmClear] = React.useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
   return (
@@ -175,7 +175,7 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoad
               const prev = chatMessages[i - 1];
               const showDateSep = m.ts && fmtDate(m.ts) !== fmtDate(prev?.ts);
               return (
-                <React.Fragment key={i}>
+                <Fragment key={i}>
                   {showDateSep && (
                     <div style={{ textAlign: "center", margin: "12px 0 6px", fontSize: 11, color: "var(--muted)", fontWeight: 600, letterSpacing: 1 }}>
                       — {fmtDate(m.ts)} —
@@ -207,7 +207,7 @@ function ChatPage({ chatMessages, chatInput, setChatInput, chatLoading, chatLoad
                       )}
                     </div>
                   </div>
-                </React.Fragment>
+                </Fragment>
               );
             })}
             {chatLoading && (

@@ -260,9 +260,9 @@ export default function SoccerApp() {
   const [uploadedVideo, setUploadedVideo] = useState(null);
   const [pendingVideo, setPendingVideo] = useState(null); // File waiting for player description (Coach AI tab)
   const [pendingVideoFile, setPendingVideoFile] = useState(null); // File waiting for description (Video Analysis tab)
-  const [videoDescJersey, setVideoDescJersey] = useState("");
-  const [videoDescDetails, setVideoDescDetails] = useState("");
-  const [videoDescFootage, setVideoDescFootage] = useState("");
+  const videoDescJerseyRef  = useRef("");
+  const videoDescDetailsRef = useRef("");
+  const videoDescFootageRef = useRef("");
   const [chatLoadingMsg, setChatLoadingMsg] = useState("Coach is thinking...");
   const fileRef = useRef();
   const chatFileRef = useRef();
@@ -880,7 +880,7 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             </div>
             <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={e => {
               const f = e.target.files[0];
-              if (f) { setUploadedVideo(f.name); setPendingVideoFile(f); setVideoDescJersey(""); setVideoDescDetails(""); setVideoDescFootage(""); setVideoAnalysis(null); }
+              if (f) { setUploadedVideo(f.name); setPendingVideoFile(f); videoDescJerseyRef.current = ""; videoDescDetailsRef.current = ""; videoDescFootageRef.current = ""; setVideoAnalysis(null); }
             }} />
             <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
               <button className="btn btn-primary" onClick={() => fileRef.current?.click()}>📤 Upload Video</button>
@@ -922,8 +922,9 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
               <input
                 className="form-input"
                 placeholder="e.g. White #13"
-                value={videoDescJersey}
-                onChange={e => setVideoDescJersey(e.target.value)}
+                defaultValue=""
+                key={uploadedVideo + "-jersey"}
+                onChange={e => { videoDescJerseyRef.current = e.target.value; }}
               />
             </div>
             <div className="form-group">
@@ -931,16 +932,18 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
               <input
                 className="form-input"
                 placeholder="e.g. Blue cleats, tallest player on the left"
-                value={videoDescDetails}
-                onChange={e => setVideoDescDetails(e.target.value)}
+                defaultValue=""
+                key={uploadedVideo + "-details"}
+                onChange={e => { videoDescDetailsRef.current = e.target.value; }}
               />
             </div>
             <div className="form-group">
               <label className="form-label">Footage type</label>
               <select
                 className="form-input"
-                value={videoDescFootage}
-                onChange={e => setVideoDescFootage(e.target.value)}
+                defaultValue=""
+                key={uploadedVideo + "-footage"}
+                onChange={e => { videoDescFootageRef.current = e.target.value; }}
               >
                 <option value="">Select...</option>
                 <option value="game footage">Game footage</option>
@@ -950,9 +953,9 @@ Keep responses under 200 words. Be direct, motivating, and specific. Reference t
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
               <button className="btn btn-primary" onClick={() => {
                 const desc = [
-                  videoDescJersey && `Jersey: ${videoDescJersey}`,
-                  videoDescDetails,
-                  videoDescFootage,
+                  videoDescJerseyRef.current  && `Jersey: ${videoDescJerseyRef.current}`,
+                  videoDescDetailsRef.current,
+                  videoDescFootageRef.current,
                   `Name: ${profile.name || "Zeke"}, Age: ${profile.age || 11}, Position: ${profile.position || "Attacking Mid"}`,
                 ].filter(Boolean).join(". ");
                 const file = pendingVideoFile;
